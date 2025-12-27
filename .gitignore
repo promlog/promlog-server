@@ -1,0 +1,33 @@
+=### ===== OS =====
+.DS_Store
+Thumbs.db
+
+### ===== IntelliJ IDEA =====
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+### ===== Build =====
+/build/
+/target/
+/bin/
+.gradle/
+
+### ===== Logs =====
+*.log
+
+### ===== Environment / Secrets =====
+.env
+.env.*
+*.env
+src/main/resources/application-local.yml
+src/main/resources/application-secret.yml
+
+### ===== Docker =====
+docker-compose.override.yml
+
+### ===== Test / Coverage =====
+/coverage/
+*.exec
