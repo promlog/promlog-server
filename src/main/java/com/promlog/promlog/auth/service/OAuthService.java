@@ -13,11 +13,12 @@ import com.promlog.promlog.global.security.jwt.JwtTokenProvider;
 import com.promlog.promlog.oauthidentity.domain.OAuthIdentity;
 import com.promlog.promlog.oauthidentity.domain.OAuthProviderType;
 import com.promlog.promlog.oauthidentity.repository.OAuthIdentityRepository;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 public class OAuthService {
@@ -48,38 +49,36 @@ public class OAuthService {
         String subject = String.valueOf(me.id());
         OAuthProviderType provider = OAuthProviderType.KAKAO;
 
-        // 1) 기존 identity 있으면 account 로그인
         var identityOpt = oauthRepo.findByProviderAndSubjectAndDeletedAtIsNull(provider, subject);
 
         Account account;
         if (identityOpt.isPresent()) {
             account = identityOpt.get().getAccount();
         } else {
-            // 2) 없으면 account + identity 생성
+            // 신규 가입
             account = new Account(pickNickname(me));
-            accountRepo.save(account);
+            accountRepo.saveAndFlush(account);
 
             try {
-                oauthRepo.save(new OAuthIdentity(
+                oauthRepo.saveAndFlush(new OAuthIdentity(
                         account,
                         provider,
                         subject,
                         pickEmail(me),
                         toProfileJson(me)
                 ));
-            } catch (DataIntegrityViolationException e) {
-                // 트리거(45000)나 unique 충돌이 여기로 들어올 가능성 큼
+            } catch (RuntimeException e) {
+                // ✅ 트리거(45000) / unique 충돌 / JPA flush 예외 등 전부 여기로 들어올 수 있음
                 throw mapOAuthInsertException(e);
             }
         }
 
-        // 3) 계정 상태 검증 (정지/탈퇴)
+        // ✅ 정지/탈퇴/재가입 제한: 토큰 발급 전에 반드시 차단
         validateAccountStatus(account);
 
-        // 4) last_login_at 업데이트
+        // ✅ 통과한 계정만 last_login_at 갱신
         account.updateLastLoginAt(LocalDateTime.now());
 
-        // 5) JWT 발급
         String access = jwt.createAccessToken(account.getId(), account.getRole().name());
         String refresh = jwt.createRefreshToken(account.getId());
 
@@ -96,16 +95,42 @@ public class OAuthService {
     }
 
     private void validateAccountStatus(Account account) {
+        LocalDateTime now = LocalDateTime.now();
+
         if (account.getStatus() == AccountStatus.SUSPENDED) {
-            if (account.getSuspendedUntil() != null && LocalDateTime.now().isBefore(account.getSuspendedUntil())) {
-                throw new BusinessException(ErrorCode.FORBIDDEN, "정지된 계정입니다.", null);
+            LocalDateTime until = account.getSuspendedUntil();
+            if (until != null && now.isBefore(until)) {
+                throw new BusinessException(
+                        ErrorCode.ACCOUNT_SUSPENDED,
+                        "정지된 계정입니다.",
+                        Map.of("suspendedUntil", until)
+                );
             }
         }
+
         if (account.getStatus() == AccountStatus.DELETED) {
-            // deleted_at + 7일 이전엔 로그인 불가
-            if (account.getDeletedAt() != null && LocalDateTime.now().isBefore(account.getDeletedAt().plusDays(7))) {
-                throw new BusinessException(ErrorCode.FORBIDDEN, "탈퇴 후 7일이 지나야 재가입/로그인이 가능합니다.", null);
+            LocalDateTime deletedAt = account.getDeletedAt();
+            LocalDateTime rejoinAllowedAt = (deletedAt == null) ? null : deletedAt.plusDays(7);
+
+            // 7일 제한 중
+            if (rejoinAllowedAt != null && now.isBefore(rejoinAllowedAt)) {
+                throw new BusinessException(
+                        ErrorCode.REJOIN_NOT_ALLOWED,
+                        "탈퇴 후 7일이 지나야 재가입/로그인이 가능합니다.",
+                        Map.of("rejoinAllowedAt", rejoinAllowedAt)
+                );
             }
+
+            // ✅ 7일이 지났어도 DELETED면 로그인 불가. (재가입 유도)
+            Map<String, Object> details = new HashMap<>();
+            if (rejoinAllowedAt != null) details.put("rejoinAllowedAt", rejoinAllowedAt);
+            if (deletedAt != null) details.put("deletedAt", deletedAt);
+
+            throw new BusinessException(
+                    ErrorCode.ACCOUNT_DELETED,
+                    "탈퇴 처리된 계정입니다. 재가입을 진행해 주세요.",
+                    details
+            );
         }
     }
 
@@ -127,14 +152,42 @@ public class OAuthService {
         }
     }
 
-    private BusinessException mapOAuthInsertException(DataIntegrityViolationException e) {
-        String msg = String.valueOf(e.getMostSpecificCause().getMessage());
+    /**
+     * ✅ DB 트리거(45000) / Unique / Constraint / JPA flush 에러 등
+     * DataIntegrityViolationException으로 안 들어오고 JpaSystemException 등으로도 올 수 있어서
+     * RuntimeException으로 받아서 root cause 메시지로 매핑한다.
+     */
+    private BusinessException mapOAuthInsertException(RuntimeException e) {
+        Throwable root = e;
+        while (root.getCause() != null) {
+            root = root.getCause();
+        }
+
+        String msg = String.valueOf(root.getMessage());
+
         if (msg.contains("Rejoin is allowed only after 7 days")) {
-            return new BusinessException(ErrorCode.FORBIDDEN, "탈퇴 후 7일이 지나야 재가입/로그인이 가능합니다.", null);
+            return new BusinessException(
+                    ErrorCode.REJOIN_NOT_ALLOWED,
+                    "탈퇴 후 7일이 지나야 재가입/로그인이 가능합니다.",
+                    Map.of("reason", "REJOIN_NOT_ALLOWED")
+            );
         }
+
         if (msg.contains("already linked")) {
-            return new BusinessException(ErrorCode.CONFLICT, "이미 연결된 소셜 계정입니다.", null);
+            return new BusinessException(
+                    ErrorCode.OAUTH_ALREADY_LINKED,
+                    "이미 연결된 소셜 계정입니다.",
+                    Map.of("reason", "OAUTH_ALREADY_LINKED")
+            );
         }
-        return new BusinessException(ErrorCode.CONFLICT, "소셜 계정 연결 중 오류가 발생했습니다.", msg);
+
+        Map<String, Object> details = new HashMap<>();
+        details.put("details", msg);
+
+        return new BusinessException(
+                ErrorCode.CONFLICT,
+                "소셜 계정 연결 중 오류가 발생했습니다.",
+                details
+        );
     }
 }

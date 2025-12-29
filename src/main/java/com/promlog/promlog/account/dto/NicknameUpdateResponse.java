@@ -1,4 +1,3 @@
 package com.promlog.promlog.account.dto;
 
-public class NicknameUpdateResponse {
-}
+public record NicknameUpdateResponse(long id, String nickname) {}

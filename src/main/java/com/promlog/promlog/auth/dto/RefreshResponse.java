@@ -1,4 +1,3 @@
 package com.promlog.promlog.auth.dto;
 
-public class RefreshResponse {
-}
+public record RefreshResponse(String accessToken) { }
