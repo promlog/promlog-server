@@ -18,6 +18,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class PromptService {
@@ -142,5 +143,24 @@ public class PromptService {
         }
 
         prompt.softDelete(LocalDateTime.now());
+    }
+
+    @Transactional
+    public Map<String, Object> copy(Long promptId) {
+
+        int updated = promptRepository.increaseCopyCount(promptId);
+        if (updated == 0) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다.");
+        }
+
+        // 최신 copyCount 조회
+        Prompt prompt = promptRepository
+                .findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        return Map.of(
+                "promptId", prompt.getId(),
+                "copyCount", prompt.getCopyCount()
+        );
     }
 }

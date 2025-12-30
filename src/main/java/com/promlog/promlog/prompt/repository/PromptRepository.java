@@ -23,4 +23,15 @@ public interface PromptRepository extends JpaRepository<Prompt, Long> {
            and p.status <> 'DELETED'
     """)
     int increaseViewCount(Long id);
+
+    @Modifying(clearAutomatically = true)
+    @Query("""
+        update Prompt p
+           set p.copyCount = p.copyCount + 1
+         where p.id = :id
+           and p.deletedAt is null
+           and p.status <> 'DELETED'
+    """)
+    int increaseCopyCount(Long id);
+
 }

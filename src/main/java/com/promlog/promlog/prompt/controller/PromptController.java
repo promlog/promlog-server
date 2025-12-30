@@ -67,4 +67,8 @@ public class PromptController {
         return ApiResponse.ok(java.util.Map.of("deleted", true));
     }
 
+    @PostMapping("/{promptId}/copy")
+    public ApiResponse<?> copy(@PathVariable Long promptId) {
+        return ApiResponse.ok(promptService.copy(promptId));
+    }
 }
