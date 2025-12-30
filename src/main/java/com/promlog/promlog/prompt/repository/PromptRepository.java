@@ -5,7 +5,22 @@ import com.promlog.promlog.prompt.domain.PromptStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+
+import java.util.Optional;
 
 public interface PromptRepository extends JpaRepository<Prompt, Long> {
     Page<Prompt> findByDeletedAtIsNullAndStatusNot(PromptStatus status, Pageable pageable);
+    Optional<Prompt> findByIdAndDeletedAtIsNullAndStatusNot(Long id, PromptStatus status);
+
+    @Modifying(clearAutomatically = true)
+    @Query("""
+        update Prompt p
+           set p.viewCount = p.viewCount + 1
+         where p.id = :id
+           and p.deletedAt is null
+           and p.status <> 'DELETED'
+    """)
+    int increaseViewCount(Long id);
 }

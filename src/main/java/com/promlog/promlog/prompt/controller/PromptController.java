@@ -10,6 +10,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import com.promlog.promlog.prompt.dto.PromptListResponse;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PathVariable;
 
 @RestController
 @RequestMapping("/api/prompts")
@@ -38,5 +39,10 @@ public class PromptController {
             @RequestParam(required = false, defaultValue = "20") int size
     ) {
         return ApiResponse.ok(promptService.list(sort, page, size));
+    }
+
+    @GetMapping("/{promptId}")
+    public ApiResponse<PromptResponse> detail(@PathVariable Long promptId) {
+        return ApiResponse.ok(promptService.getDetail(promptId));
     }
 }

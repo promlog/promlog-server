@@ -15,7 +15,6 @@ import com.promlog.promlog.prompt.domain.PromptStatus;
 import com.promlog.promlog.prompt.dto.PromptListResponse;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
-
 import java.util.List;
 
 @Service
@@ -90,5 +89,25 @@ public class PromptService {
         );
 
         return new PromptListResponse(items, meta);
+    }
+
+    @Transactional
+    public PromptResponse getDetail(Long promptId) {
+
+        // 1) 조회수 증가 (존재 + 노출 대상일 때만 증가)
+        int updated = promptRepository.increaseViewCount(promptId);
+        if (updated == 0) {
+            // 존재하지 않거나 삭제된 경우
+            throw new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다.");
+        }
+
+        // 2) 상세 조회
+        var prompt = promptRepository
+                .findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
+                .orElseThrow(() ->
+                        new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다.")
+                );
+
+        return PromptResponse.from(prompt);
     }
 }
