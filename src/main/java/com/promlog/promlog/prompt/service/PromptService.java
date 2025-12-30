@@ -16,6 +16,7 @@ import com.promlog.promlog.prompt.domain.PromptStatus;
 import com.promlog.promlog.prompt.dto.PromptListResponse;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -127,5 +128,19 @@ public class PromptService {
         prompt.update(req.title(), req.body(), req.sourceUrl(), req.isAnonymous());
 
         return PromptResponse.from(prompt);
+    }
+
+    @Transactional
+    public void delete(long accountId, Long promptId) {
+        var prompt = promptRepository
+                .findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        // ✅ 작성자만
+        if (!prompt.getAuthorAccountId().equals(accountId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "작성자만 삭제할 수 있습니다.");
+        }
+
+        prompt.softDelete(LocalDateTime.now());
     }
 }

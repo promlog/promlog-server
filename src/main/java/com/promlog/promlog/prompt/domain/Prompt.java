@@ -128,4 +128,9 @@ public class Prompt {
 
         if (isAnonymous != null) this.isAnonymous = isAnonymous;
     }
+
+    public void softDelete(LocalDateTime now) {
+        this.status = PromptStatus.DELETED;
+        this.deletedAt = now;
+    }
 }

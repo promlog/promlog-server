@@ -56,4 +56,15 @@ public class PromptController {
         long accountId = (long) authentication.getPrincipal();
         return ApiResponse.ok(promptService.update(accountId, promptId, req));
     }
+
+    @DeleteMapping("/{promptId}")
+    @ResponseStatus(HttpStatus.OK)
+    public ApiResponse<?> delete(Authentication authentication,
+                                 @PathVariable Long promptId
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        promptService.delete(accountId, promptId);
+        return ApiResponse.ok(java.util.Map.of("deleted", true));
+    }
+
 }
