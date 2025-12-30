@@ -35,15 +35,15 @@ public class OAuthController {
         response.sendRedirect(authorizeUrl);
     }
 
+    // ✅ 프론트가 code 받는 경우: 이 콜백은 이제 "프론트"로 감
+    // 그래서 이 엔드포인트는 거의 안 쓰게 됨(남겨도 되는데 실제로는 호출 안 됨)
     @GetMapping("/kakao/callback")
     public ApiResponse<?> kakaoCallback(
             @RequestParam(required = false) String code,
             @RequestParam(required = false) String error,
             @RequestParam(required = false, name = "error_description") String errorDescription
     ) {
-        // 1) code가 없으면 -> 카카오가 실패/취소로 보낸 것
         if (code == null || code.isBlank()) {
-            // 여기서 원인을 그대로 내려주면 다음 디버깅이 쉬움
             throw new BusinessException(
                     ErrorCode.VALIDATION_ERROR,
                     "카카오 인증 실패 또는 취소",
@@ -53,10 +53,19 @@ public class OAuthController {
                     )
             );
         }
-
-        // 2) 정상 성공
         return ApiResponse.ok(oauthService.kakaoLogin(code));
     }
+
+    // ✅ NEW: 프론트가 받은 code로 로그인 처리하는 API
+    @PostMapping("/kakao/code")
+    public ApiResponse<?> kakaoCodeLogin(@RequestBody KakaoCodeRequest request) {
+        if (request.code() == null || request.code().isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "code가 비어있습니다.", null);
+        }
+        return ApiResponse.ok(oauthService.kakaoLogin(request.code()));
+    }
+
+    public record KakaoCodeRequest(String code) {}
 
     private String url(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
