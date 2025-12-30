@@ -8,6 +8,8 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import com.promlog.promlog.prompt.dto.PromptListResponse;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequestMapping("/api/prompts")
@@ -27,5 +29,14 @@ public class PromptController {
     ) {
         long accountId = (long) authentication.getPrincipal(); // ✅ AccountController와 동일
         return ApiResponse.ok(promptService.create(accountId, req));
+    }
+
+    @GetMapping
+    public ApiResponse<PromptListResponse> list(
+            @RequestParam(required = false, defaultValue = "latest") String sort,
+            @RequestParam(required = false, defaultValue = "1") int page,
+            @RequestParam(required = false, defaultValue = "20") int size
+    ) {
+        return ApiResponse.ok(promptService.list(sort, page, size));
     }
 }

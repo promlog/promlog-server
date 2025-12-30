@@ -10,6 +10,13 @@ import com.promlog.promlog.prompt.dto.PromptResponse;
 import com.promlog.promlog.prompt.repository.PromptRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.promlog.promlog.global.response.PageMeta;
+import com.promlog.promlog.prompt.domain.PromptStatus;
+import com.promlog.promlog.prompt.dto.PromptListResponse;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+
+import java.util.List;
 
 @Service
 public class PromptService {
@@ -46,5 +53,42 @@ public class PromptService {
 
         Prompt saved = promptRepository.save(prompt);
         return PromptResponse.from(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public PromptListResponse list(String sort, int page, int size) {
+
+        // ✅ page: 1-base, size: 기본 20 / max 50
+        if (page < 1) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
+        if (size < 1 || size > 50) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "size는 1~50 이어야 합니다.");
+
+        String s = (sort == null || sort.isBlank()) ? "latest" : sort;
+
+        Sort springSort;
+        if ("latest".equalsIgnoreCase(s)) {
+            springSort = Sort.by(Sort.Direction.DESC, "createdAt");
+        } else {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "지원하지 않는 sort 입니다.", java.util.Map.of("sort", s));
+        }
+
+        // 0-base로 변환
+        PageRequest pageable = PageRequest.of(page - 1, size, springSort);
+
+        var result = promptRepository.findByDeletedAtIsNullAndStatusNot(PromptStatus.DELETED, pageable);
+
+        List<PromptResponse> items = result.getContent()
+                .stream()
+                .map(PromptResponse::from)
+                .toList();
+
+        PageMeta meta = new PageMeta(
+                page,
+                size,
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.hasNext()
+        );
+
+        return new PromptListResponse(items, meta);
     }
 }
