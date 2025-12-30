@@ -117,4 +117,15 @@ public class Prompt {
     public Long getAuthorAccountId() {
         return author.getId();
     }
+
+    public void update(String title, String body, String sourceUrl, Boolean isAnonymous) {
+        if (title != null) this.title = title.trim();
+        if (body != null) this.body = body;
+        // sourceUrl은 null이 들어오면 "지우기" 의도일 수 있음 -> 요청에 들어온 경우에만 반영해야 함
+        // 그래서 서비스에서 "요청에 sourceUrl 키가 있었는지"를 구분해 처리할 건데,
+        // 단순 버전(W1)은: sourceUrl 필드가 null이면 지우기라고 해석 (요구사항에 sourceUrl:null 예시가 있음)
+        this.sourceUrl = sourceUrl;
+
+        if (isAnonymous != null) this.isAnonymous = isAnonymous;
+    }
 }

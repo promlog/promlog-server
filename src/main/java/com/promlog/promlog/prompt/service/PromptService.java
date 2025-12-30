@@ -7,6 +7,7 @@ import com.promlog.promlog.global.error.ErrorCode;
 import com.promlog.promlog.prompt.domain.Prompt;
 import com.promlog.promlog.prompt.dto.PromptCreateRequest;
 import com.promlog.promlog.prompt.dto.PromptResponse;
+import com.promlog.promlog.prompt.dto.PromptUpdateRequest;
 import com.promlog.promlog.prompt.repository.PromptRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -107,6 +108,23 @@ public class PromptService {
                 .orElseThrow(() ->
                         new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다.")
                 );
+
+        return PromptResponse.from(prompt);
+    }
+
+    @Transactional
+    public PromptResponse update(long accountId, Long promptId, PromptUpdateRequest req) {
+        var prompt = promptRepository
+                .findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        // ✅ 작성자 검증
+        if (!prompt.getAuthorAccountId().equals(accountId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "작성자만 수정할 수 있습니다.");
+        }
+
+        // ✅ 부분 수정 적용
+        prompt.update(req.title(), req.body(), req.sourceUrl(), req.isAnonymous());
 
         return PromptResponse.from(prompt);
     }
