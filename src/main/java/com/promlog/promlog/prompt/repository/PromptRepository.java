@@ -34,4 +34,10 @@ public interface PromptRepository extends JpaRepository<Prompt, Long> {
     """)
     int increaseCopyCount(Long id);
 
+    // 내가 쓴 프롬프트 목록
+    Page<Prompt> findByAuthor_IdAndDeletedAtIsNullAndStatusNot(
+            Long authorId,
+            PromptStatus status,
+            Pageable pageable
+    );
 }

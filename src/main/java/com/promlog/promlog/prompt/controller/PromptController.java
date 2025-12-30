@@ -71,4 +71,15 @@ public class PromptController {
     public ApiResponse<?> copy(@PathVariable Long promptId) {
         return ApiResponse.ok(promptService.copy(promptId));
     }
+
+    @GetMapping("/me")
+    public ApiResponse<PromptListResponse> myPrompts(
+            Authentication authentication,
+            @RequestParam(required = false, defaultValue = "1") int page,
+            @RequestParam(required = false, defaultValue = "20") int size
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.listMine(accountId, page, size));
+    }
+
 }
