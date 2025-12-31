@@ -14,7 +14,8 @@ public class CorsConfig {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/api/**")
-                        .allowedOrigins("http://localhost:3000")
+                        .allowedOrigins("http://localhost:3000",
+                                "https://promlog.vercel.app")
                         .allowedMethods("GET","POST","PATCH","DELETE","OPTIONS")
                         .allowedHeaders("*")
                         .allowCredentials(true);
