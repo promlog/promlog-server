@@ -18,7 +18,9 @@ public class AuthController {
     }
 
     @PostMapping("/refresh")
-    public ApiResponse<RefreshResponse> refresh(@RequestBody RefreshRequest request) {
-        return ApiResponse.ok(authService.refreshAccessToken(request.refreshToken()));
+    public ApiResponse<RefreshResponse> refresh(
+            @CookieValue(name = "refresh_token", required = false) String refreshToken
+    ) {
+        return ApiResponse.ok(authService.refreshAccessToken(refreshToken));
     }
 }
