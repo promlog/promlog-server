@@ -1,11 +1,13 @@
 package com.promlog.promlog.auth.controller;
 
+import com.promlog.promlog.auth.dto.AuthResponse;
 import com.promlog.promlog.auth.infra.kakao.KakaoOAuthProperties;
 import com.promlog.promlog.auth.service.OAuthService;
 import com.promlog.promlog.global.error.BusinessException;
 import com.promlog.promlog.global.error.ErrorCode;
 import com.promlog.promlog.global.response.ApiResponse;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.ResponseCookie;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -58,14 +60,38 @@ public class OAuthController {
 
     // ✅ NEW: 프론트가 받은 code로 로그인 처리하는 API
     @PostMapping("/kakao/code")
-    public ApiResponse<?> kakaoCodeLogin(@RequestBody KakaoCodeRequest request) {
+    public ApiResponse<?> kakaoCodeLogin(@RequestBody KakaoCodeRequest request, HttpServletResponse response) {
         if (request.code() == null || request.code().isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "code가 비어있습니다.", null);
         }
-        return ApiResponse.ok(oauthService.kakaoLogin(request.code()));
+        AuthResponse auth = oauthService.kakaoLogin(request.code());
+
+        // ✅ refresh token → HttpOnly 쿠키
+        ResponseCookie refreshCookie = ResponseCookie.from("refresh_token", auth.refreshToken())
+                .httpOnly(true)
+                .secure(true)          // 로컬 http면 false
+                .path("/api/auth")
+                .sameSite("Lax")
+                .maxAge(60L * 60 * 24 * 14)
+                .build();
+
+        response.addHeader("Set-Cookie", refreshCookie.toString());
+
+        // ✅ 응답 바디에는 accessToken + account만 내려줌
+        return ApiResponse.ok(
+                new KakaoLoginResponse(
+                        auth.accessToken(),
+                        auth.account()
+                )
+        );
     }
 
     public record KakaoCodeRequest(String code) {}
+
+    public record KakaoLoginResponse(
+            String accessToken,
+            AuthResponse.AccountDto account
+    ) {}
 
     private String url(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
