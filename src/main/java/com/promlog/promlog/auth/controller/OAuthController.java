@@ -69,7 +69,7 @@ public class OAuthController {
         // ✅ refresh token → HttpOnly 쿠키
         ResponseCookie refreshCookie = ResponseCookie.from("refresh_token", auth.refreshToken())
                 .httpOnly(true)
-                .secure(true)          // 로컬 http면 false
+                .secure(false)          // 로컬 http면 false
                 .path("/api/auth")
                 .sameSite("Lax")
                 .maxAge(60L * 60 * 24 * 14)
