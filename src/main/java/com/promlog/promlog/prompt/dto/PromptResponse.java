@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 public record PromptResponse(
         Long id,
         Long authorAccountId,
+        String authorNickname,
         String title,
         String body,
         String sourceUrl,
@@ -19,9 +20,11 @@ public record PromptResponse(
         LocalDateTime createdAt
 ) {
     public static PromptResponse from(Prompt p) {
+        String nickname = p.isAnonymous() ? null : p.getAuthor().getNickname();
         return new PromptResponse(
                 p.getId(),
                 p.getAuthorAccountId(),
+                nickname,
                 p.getTitle(),
                 p.getBody(),
                 p.getSourceUrl(),
