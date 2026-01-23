@@ -37,9 +37,20 @@ public class Prompt {
     @Column(nullable = false, length = 200)
     private String title;
 
+    /* ===============================
+       본문 분리: 설명 / 프롬프트 / 팁(선택)
+       =============================== */
     @Lob
     @Column(nullable = false, columnDefinition = "TEXT")
-    private String body;
+    private String description; // 설명
+
+    @Lob
+    @Column(name = "prompt_text", nullable = false, columnDefinition = "TEXT")
+    private String prompt; // 프롬프트 본문
+
+    @Lob
+    @Column(columnDefinition = "TEXT")
+    private String tip; // 선택
 
     @Column(name = "source_url", length = 500)
     private String sourceUrl;
@@ -84,13 +95,17 @@ public class Prompt {
     public Prompt(
             Account author,
             String title,
-            String body,
+            String description,
+            String prompt,
+            String tip,
             String sourceUrl,
             boolean isAnonymous
     ) {
         this.author = author;
         this.title = title;
-        this.body = body;
+        this.description = description;
+        this.prompt = prompt;
+        this.tip = tip;
         this.sourceUrl = sourceUrl;
         this.isAnonymous = isAnonymous;
         this.status = PromptStatus.ACTIVE;
@@ -118,12 +133,21 @@ public class Prompt {
         return author.getId();
     }
 
-    public void update(String title, String body, String sourceUrl, Boolean isAnonymous) {
+    public void update(String title,
+                       String description,
+                       String prompt,
+                       String tip,
+                       String sourceUrl,
+                       Boolean isAnonymous) {
+
         if (title != null) this.title = title.trim();
-        if (body != null) this.body = body;
-        // sourceUrl은 null이 들어오면 "지우기" 의도일 수 있음 -> 요청에 들어온 경우에만 반영해야 함
-        // 그래서 서비스에서 "요청에 sourceUrl 키가 있었는지"를 구분해 처리할 건데,
-        // 단순 버전(W1)은: sourceUrl 필드가 null이면 지우기라고 해석 (요구사항에 sourceUrl:null 예시가 있음)
+        if (description != null) this.description = description;
+        if (prompt != null) this.prompt = prompt;
+
+        // tip은 null이 들어오면 "지우기" 의도일 수 있음 -> 현재 버전은 그대로 반영(=null이면 삭제)
+        this.tip = tip;
+
+        // sourceUrl도 동일하게 null이면 삭제로 처리(요구사항에 따라 키 존재여부 구분 가능)
         this.sourceUrl = sourceUrl;
 
         if (isAnonymous != null) this.isAnonymous = isAnonymous;
