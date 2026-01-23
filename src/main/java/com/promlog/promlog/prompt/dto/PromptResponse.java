@@ -10,7 +10,9 @@ public record PromptResponse(
         Long authorAccountId,
         String authorNickname,
         String title,
-        String body,
+        String description,
+        String prompt,
+        String tip,
         String sourceUrl,
         boolean isAnonymous,
         PromptStatus status,
@@ -21,12 +23,15 @@ public record PromptResponse(
 ) {
     public static PromptResponse from(Prompt p) {
         String nickname = p.isAnonymous() ? null : p.getAuthor().getNickname();
+
         return new PromptResponse(
                 p.getId(),
                 p.getAuthorAccountId(),
                 nickname,
                 p.getTitle(),
-                p.getBody(),
+                p.getDescription(),
+                p.getPrompt(),
+                p.getTip(),
                 p.getSourceUrl(),
                 p.isAnonymous(),
                 p.getStatus(),

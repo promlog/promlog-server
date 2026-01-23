@@ -49,7 +49,9 @@ public class PromptService {
         Prompt prompt = new Prompt(
                 author,
                 req.title().trim(),
-                req.body(),
+                req.description(),
+                req.prompt(),
+                req.tip(),
                 req.sourceUrl(),
                 req.isAnonymous()
         );
@@ -79,12 +81,11 @@ public class PromptService {
 
         PageRequest pageable = PageRequest.of(page - 1, size, springSort);
 
-        // ✅ Repository에서 EntityGraph로 author까지 로딩됨
         var result = promptRepository.findByDeletedAtIsNullAndStatusNot(PromptStatus.DELETED, pageable);
 
         List<PromptResponse> items = result.getContent()
                 .stream()
-                .map(PromptResponse::from) // from() 내부에서 p.getAuthor().getNickname() 가능
+                .map(PromptResponse::from)
                 .toList();
 
         PageMeta meta = new PageMeta(
@@ -101,13 +102,11 @@ public class PromptService {
     @Transactional
     public PromptResponse getDetail(Long promptId) {
 
-        // 1) 조회수 증가 (존재 + 노출 대상일 때만 증가)
         int updated = promptRepository.increaseViewCount(promptId);
         if (updated == 0) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다.");
         }
 
-        // 2) 상세 조회 (✅ author까지 fetch join으로 로딩)
         var prompt = promptRepository
                 .findDetailWithAuthor(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
@@ -125,7 +124,14 @@ public class PromptService {
             throw new BusinessException(ErrorCode.FORBIDDEN, "작성자만 수정할 수 있습니다.");
         }
 
-        prompt.update(req.title(), req.body(), req.sourceUrl(), req.isAnonymous());
+        prompt.update(
+                req.title(),
+                req.description(),
+                req.prompt(),
+                req.tip(),
+                req.sourceUrl(),
+                req.isAnonymous()
+        );
 
         return PromptResponse.from(prompt);
     }
@@ -151,7 +157,6 @@ public class PromptService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다.");
         }
 
-        // 최신 copyCount 조회 (copyCount만 필요면 굳이 author fetch 필요 없음)
         Prompt prompt = promptRepository
                 .findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
@@ -178,7 +183,6 @@ public class PromptService {
                 Sort.by(Sort.Direction.DESC, "createdAt")
         );
 
-        // ✅ Repository에서 EntityGraph로 author까지 로딩됨
         var result = promptRepository.findByAuthor_IdAndDeletedAtIsNullAndStatusNot(
                 accountId,
                 PromptStatus.DELETED,
