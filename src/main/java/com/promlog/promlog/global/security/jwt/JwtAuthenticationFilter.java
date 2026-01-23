@@ -22,31 +22,32 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(
-            HttpServletRequest request,
-            HttpServletResponse response,
-            FilterChain filterChain
-    ) throws ServletException, IOException {
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
 
         String header = request.getHeader("Authorization");
 
         if (header != null && header.startsWith("Bearer ")) {
-            String accessToken = header.substring(7);
+            try {
+                String accessToken = header.substring(7);
 
-            // access token 파싱
-            long accountId = jwtTokenProvider.parseSubjectAsLong(accessToken);
+                long accountId = jwtTokenProvider.parseSubjectAsLong(accessToken);
 
-            // role도 token에 들어 있으니 claims에서 꺼내도 됨 (지금은 USER 고정도 OK)
-            Authentication authentication =
-                    new UsernamePasswordAuthenticationToken(
-                            accountId,       // principal
-                            null,
-                            List.of(new SimpleGrantedAuthority("ROLE_USER"))
-                    );
+                Authentication authentication =
+                        new UsernamePasswordAuthenticationToken(
+                                accountId,
+                                null,
+                                List.of(new SimpleGrantedAuthority("ROLE_USER"))
+                        );
 
-            SecurityContextHolder.getContext().setAuthentication(authentication);
+                SecurityContextHolder.getContext().setAuthentication(authentication);
+            } catch (Exception e) {
+                // 토큰이 깨졌거나 만료된 경우: 인증을 세팅하지 않고 통과
+                SecurityContextHolder.clearContext();
+            }
         }
 
         filterChain.doFilter(request, response);
     }
+
 }
