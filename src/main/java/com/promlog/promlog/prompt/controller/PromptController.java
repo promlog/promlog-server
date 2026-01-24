@@ -2,6 +2,7 @@ package com.promlog.promlog.prompt.controller;
 
 import com.promlog.promlog.global.response.ApiResponse;
 import com.promlog.promlog.prompt.dto.PromptCreateRequest;
+import com.promlog.promlog.prompt.dto.PromptListResponse;
 import com.promlog.promlog.prompt.dto.PromptResponse;
 import com.promlog.promlog.prompt.dto.PromptUpdateRequest;
 import com.promlog.promlog.prompt.service.PromptService;
@@ -9,9 +10,8 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import com.promlog.promlog.prompt.dto.PromptListResponse;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.PathVariable;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/prompts")
@@ -37,9 +37,13 @@ public class PromptController {
     public ApiResponse<PromptListResponse> list(
             @RequestParam(required = false, defaultValue = "latest") String sort,
             @RequestParam(required = false, defaultValue = "1") int page,
-            @RequestParam(required = false, defaultValue = "20") int size
+            @RequestParam(required = false, defaultValue = "20") int size,
+
+            // ✅ 추가: /api/prompts?categoryIds=1,3&platformIds=2 형태
+            @RequestParam(required = false) List<Long> categoryIds,
+            @RequestParam(required = false) List<Long> platformIds
     ) {
-        return ApiResponse.ok(promptService.list(sort, page, size));
+        return ApiResponse.ok(promptService.list(sort, page, size, categoryIds, platformIds));
     }
 
     @GetMapping("/{promptId}")
@@ -59,8 +63,9 @@ public class PromptController {
 
     @DeleteMapping("/{promptId}")
     @ResponseStatus(HttpStatus.OK)
-    public ApiResponse<?> delete(Authentication authentication,
-                                 @PathVariable Long promptId
+    public ApiResponse<?> delete(
+            Authentication authentication,
+            @PathVariable Long promptId
     ) {
         long accountId = (long) authentication.getPrincipal();
         promptService.delete(accountId, promptId);
@@ -81,5 +86,4 @@ public class PromptController {
         long accountId = (long) authentication.getPrincipal();
         return ApiResponse.ok(promptService.listMine(accountId, page, size));
     }
-
 }

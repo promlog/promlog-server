@@ -14,8 +14,10 @@ import com.promlog.promlog.prompt.dto.PromptResponse;
 import com.promlog.promlog.prompt.dto.PromptUpdateRequest;
 import com.promlog.promlog.prompt.platform.repository.PlatformRepository;
 import com.promlog.promlog.prompt.repository.PromptRepository;
+import com.promlog.promlog.prompt.repository.PromptSpecifications;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -94,8 +96,10 @@ public class PromptService {
         return PromptResponse.from(refreshed);
     }
 
+    // ✅ 변경: categoryIds, platformIds 추가
     @Transactional(readOnly = true)
-    public PromptListResponse list(String sort, int page, int size) {
+    public PromptListResponse list(String sort, int page, int size,
+                                   List<Long> categoryIds, List<Long> platformIds) {
 
         if (page < 1) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
         if (size < 1 || size > 50) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "size는 1~50 이어야 합니다.");
@@ -114,8 +118,23 @@ public class PromptService {
         }
 
         PageRequest pageable = PageRequest.of(page - 1, size, springSort);
-        var result = promptRepository.findByDeletedAtIsNullAndStatusNot(PromptStatus.DELETED, pageable);
 
+        // ✅ ids sanitize (null/중복/0 이하 제거)
+        List<Long> cids = safeIds(categoryIds);
+        List<Long> pids = safeIds(platformIds);
+
+        // ✅ 필터 spec 조합
+        Specification<Prompt> spec = Specification
+                .where(PromptSpecifications.baseVisible())
+                .and(PromptSpecifications.hasAnyCategoryIds(cids))
+                .and(PromptSpecifications.hasAnyPlatformIds(pids));
+
+        // ✅ spec 기반 조회
+        var result = promptRepository.findAll(spec, pageable);
+
+        // ⚠️ spec 조회는 EntityGraph가 안 붙어서 author/tags가 LAZY일 수 있음
+        // 하지만 readOnly 트랜잭션 안에서 접근하면 보통 OK.
+        // 성능 최적화가 필요해지면 "ID 페이지 -> fetch join 재조회"로 개선하면 됨.
         List<PromptResponse> items = result.getContent()
                 .stream()
                 .map(PromptResponse::from)
