@@ -3,6 +3,8 @@ package com.promlog.promlog.prompt.dto;
 import jakarta.validation.constraints.Size;
 import org.hibernate.validator.constraints.URL;
 
+import java.util.List;
+
 public record PromptUpdateRequest(
 
         @Size(min = 1, max = 200, message = "title은 1~200자여야 합니다.")
@@ -21,5 +23,10 @@ public record PromptUpdateRequest(
         @Size(max = 500, message = "sourceUrl은 최대 500자입니다.")
         String sourceUrl,
 
-        Boolean isAnonymous
+        Boolean isAnonymous,
+
+        // ✅ 추가
+        // null이면 "유지", []면 "전부 제거", 값 있으면 "교체"
+        List<Long> categoryIds,
+        List<Long> platformIds
 ) {}

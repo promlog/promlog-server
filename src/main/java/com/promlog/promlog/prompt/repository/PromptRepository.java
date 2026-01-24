@@ -13,11 +13,14 @@ import java.util.Optional;
 
 public interface PromptRepository extends JpaRepository<Prompt, Long> {
 
-    // ✅ 목록 조회: author까지 같이 로딩 (nickname 필요)
-    @EntityGraph(attributePaths = "author")
+    // ✅ 목록: author + tags까지 같이 로딩 (categories/platforms 응답에 필요)
+    @EntityGraph(attributePaths = {
+            "author",
+            "promptCategories", "promptCategories.category",
+            "promptPlatforms", "promptPlatforms.platform"
+    })
     Page<Prompt> findByDeletedAtIsNullAndStatusNot(PromptStatus status, Pageable pageable);
 
-    // ✅ 상세 기본 조회(혹시 다른 곳에서 쓰면 author는 LAZY라 nickname 필요 시 문제)
     Optional<Prompt> findByIdAndDeletedAtIsNullAndStatusNot(Long id, PromptStatus status);
 
     @Modifying(clearAutomatically = true)
@@ -40,22 +43,30 @@ public interface PromptRepository extends JpaRepository<Prompt, Long> {
     """)
     int increaseCopyCount(Long id);
 
-    // ✅ 내가 쓴 프롬프트 목록: author까지 같이 로딩
-    @EntityGraph(attributePaths = "author")
+    // ✅ 내 글 목록: author + tags
+    @EntityGraph(attributePaths = {
+            "author",
+            "promptCategories", "promptCategories.category",
+            "promptPlatforms", "promptPlatforms.platform"
+    })
     Page<Prompt> findByAuthor_IdAndDeletedAtIsNullAndStatusNot(
             Long authorId,
             PromptStatus status,
             Pageable pageable
     );
 
-    // ✅ 상세 조회: fetch join으로 author까지 같이 가져오기 (조회수 증가 후 조회에 사용)
+    // ✅ 상세: author + tags fetch join (viewCount 증가 후 조회에 사용)
     @Query("""
-        select p
+        select distinct p
         from Prompt p
         join fetch p.author a
+        left join fetch p.promptCategories pc
+        left join fetch pc.category
+        left join fetch p.promptPlatforms pp
+        left join fetch pp.platform
         where p.id = :id
           and p.deletedAt is null
           and p.status <> :status
     """)
-    Optional<Prompt> findDetailWithAuthor(Long id, PromptStatus status);
+    Optional<Prompt> findDetailWithAuthorAndTags(Long id, PromptStatus status);
 }

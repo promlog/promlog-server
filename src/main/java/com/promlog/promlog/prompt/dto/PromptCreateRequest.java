@@ -4,6 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import org.hibernate.validator.constraints.URL;
 
+import java.util.List;
+
 public record PromptCreateRequest(
 
         @NotBlank
@@ -19,12 +21,16 @@ public record PromptCreateRequest(
         String prompt,
 
         // 선택
-        @Size(max = 5000, message = "tip은 너무 깁니다.") // 원하면 제한 없애도 됨
+        @Size(max = 5000, message = "tip은 너무 깁니다.")
         String tip,
 
         @URL
         @Size(max = 500)
         String sourceUrl,
 
-        boolean isAnonymous
+        boolean isAnonymous,
+
+        // ✅ 추가: 없으면 null/[] 둘 다 허용
+        List<Long> categoryIds,
+        List<Long> platformIds
 ) {}

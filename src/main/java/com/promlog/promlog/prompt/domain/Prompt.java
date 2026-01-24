@@ -1,12 +1,17 @@
 package com.promlog.promlog.prompt.domain;
 
 import com.promlog.promlog.account.domain.Account;
+import com.promlog.promlog.prompt.category.domain.Category;
+import com.promlog.promlog.prompt.platform.domain.Platform;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 import static lombok.AccessLevel.PROTECTED;
 
@@ -90,6 +95,16 @@ public class Prompt {
     private LocalDateTime deletedAt;
 
     /* ===============================
+       카테고리/플랫폼 매핑
+       - orphanRemoval=true 로 "교체" 처리 가능
+       =============================== */
+    @OneToMany(mappedBy = "prompt", cascade = CascadeType.ALL, orphanRemoval = true)
+    private final Set<PromptCategory> promptCategories = new LinkedHashSet<>();
+
+    @OneToMany(mappedBy = "prompt", cascade = CascadeType.ALL, orphanRemoval = true)
+    private final Set<PromptPlatform> promptPlatforms = new LinkedHashSet<>();
+
+    /* ===============================
        생성자
        =============================== */
     public Prompt(
@@ -156,5 +171,24 @@ public class Prompt {
     public void softDelete(LocalDateTime now) {
         this.status = PromptStatus.DELETED;
         this.deletedAt = now;
+    }
+
+    /* ===============================
+       카테고리/플랫폼 교체
+       - Update 정책: null이면 유지, []면 전부 제거, 값 있으면 교체
+       - Create는 save 후(=id 생성 후) 호출 권장
+       =============================== */
+    public void replaceCategories(List<Category> categories) {
+        this.promptCategories.clear();
+        for (Category c : categories) {
+            this.promptCategories.add(new PromptCategory(this, c));
+        }
+    }
+
+    public void replacePlatforms(List<Platform> platforms) {
+        this.promptPlatforms.clear();
+        for (Platform p : platforms) {
+            this.promptPlatforms.add(new PromptPlatform(this, p));
+        }
     }
 }
