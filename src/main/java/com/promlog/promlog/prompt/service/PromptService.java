@@ -8,11 +8,13 @@ import com.promlog.promlog.global.response.PageMeta;
 import com.promlog.promlog.prompt.category.repository.CategoryRepository;
 import com.promlog.promlog.prompt.domain.Prompt;
 import com.promlog.promlog.prompt.domain.PromptStatus;
+import com.promlog.promlog.prompt.dto.LikeResponse;
 import com.promlog.promlog.prompt.dto.PromptCreateRequest;
 import com.promlog.promlog.prompt.dto.PromptListResponse;
 import com.promlog.promlog.prompt.dto.PromptResponse;
 import com.promlog.promlog.prompt.dto.PromptUpdateRequest;
 import com.promlog.promlog.prompt.platform.repository.PlatformRepository;
+import com.promlog.promlog.prompt.repository.PromptLikeRepository;
 import com.promlog.promlog.prompt.repository.PromptRepository;
 import com.promlog.promlog.prompt.repository.PromptSpecifications;
 import org.springframework.data.domain.PageRequest;
@@ -28,17 +30,20 @@ import java.util.*;
 public class PromptService {
 
     private final PromptRepository promptRepository;
+    private final PromptLikeRepository promptLikeRepository;
     private final AccountRepository accountRepository;
     private final CategoryRepository categoryRepository;
     private final PlatformRepository platformRepository;
 
     public PromptService(
             PromptRepository promptRepository,
+            PromptLikeRepository promptLikeRepository,
             AccountRepository accountRepository,
             CategoryRepository categoryRepository,
             PlatformRepository platformRepository
     ) {
         this.promptRepository = promptRepository;
+        this.promptLikeRepository = promptLikeRepository;
         this.accountRepository = accountRepository;
         this.categoryRepository = categoryRepository;
         this.platformRepository = platformRepository;
@@ -93,12 +98,6 @@ public class PromptService {
         return PromptResponse.from(refreshed);
     }
 
-    /**
-     * sort:
-     * - latest (기본): createdAt DESC
-     * - likes: likeCount DESC, createdAt DESC
-     * - views: viewCount DESC, createdAt DESC
-     */
     @Transactional(readOnly = true)
     public PromptListResponse list(String sort, int page, int size,
                                    List<Long> categoryIds, List<Long> platformIds) {
@@ -278,6 +277,40 @@ public class PromptService {
         );
 
         return new PromptListResponse(items, meta);
+    }
+
+    /* ===============================
+       likes
+       =============================== */
+
+    @Transactional
+    public LikeResponse like(long accountId, Long promptId) {
+        promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        int affected = promptLikeRepository.like(promptId, accountId);
+
+        if (affected > 0) {
+            promptRepository.increaseLikeCount(promptId);
+        }
+
+        int likeCount = promptRepository.findLikeCountOrZero(promptId);
+        return new LikeResponse(true, likeCount);
+    }
+
+    @Transactional
+    public LikeResponse unlike(long accountId, Long promptId) {
+        promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        int affected = promptLikeRepository.unlike(promptId, accountId);
+
+        if (affected == 1) {
+            promptRepository.decreaseLikeCount(promptId);
+        }
+
+        int likeCount = promptRepository.findLikeCountOrZero(promptId);
+        return new LikeResponse(false, likeCount);
     }
 
     /* ===============================
