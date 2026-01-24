@@ -14,8 +14,10 @@ import com.promlog.promlog.prompt.dto.PromptResponse;
 import com.promlog.promlog.prompt.dto.PromptUpdateRequest;
 import com.promlog.promlog.prompt.platform.repository.PlatformRepository;
 import com.promlog.promlog.prompt.repository.PromptRepository;
+import com.promlog.promlog.prompt.repository.PromptSpecifications;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -65,14 +67,12 @@ public class PromptService {
 
         Prompt saved = promptRepository.save(prompt); // id 생성
 
-        // ✅ 1) 카테고리/플랫폼 ids 정리
         List<Long> categoryIds = safeIds(req.categoryIds());
         List<Long> platformIds = safeIds(req.platformIds());
 
-        // ✅ 2) soft-delete 제외 조회 + 검증 + 매핑
         if (!categoryIds.isEmpty()) {
             var categories = categoryRepository.findByIdInAndDeletedAtIsNull(categoryIds);
-            validateAllIdsExist(categoryIds, categories.size(), "categoryIds"); // 삭제/미존재 id 막힘
+            validateAllIdsExist(categoryIds, categories.size(), "categoryIds");
             saved.replaceCategories(categories);
         } else {
             saved.replaceCategories(List.of());
@@ -86,7 +86,6 @@ public class PromptService {
             saved.replacePlatforms(List.of());
         }
 
-        // 응답은 tags까지 확실히 포함하려고 fetch join으로 재조회
         var refreshed = promptRepository
                 .findDetailWithAuthorAndTags(saved.getId(), PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
@@ -94,27 +93,43 @@ public class PromptService {
         return PromptResponse.from(refreshed);
     }
 
+    /**
+     * sort:
+     * - latest (기본): createdAt DESC
+     * - likes: likeCount DESC, createdAt DESC
+     * - views: viewCount DESC, createdAt DESC
+     */
     @Transactional(readOnly = true)
-    public PromptListResponse list(String sort, int page, int size) {
+    public PromptListResponse list(String sort, int page, int size,
+                                   List<Long> categoryIds, List<Long> platformIds) {
 
         if (page < 1) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
         if (size < 1 || size > 50) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "size는 1~50 이어야 합니다.");
 
-        String s = (sort == null || sort.isBlank()) ? "latest" : sort;
+        String s = (sort == null || sort.isBlank()) ? "latest" : sort.trim().toLowerCase();
 
-        Sort springSort;
-        if ("latest".equalsIgnoreCase(s)) {
-            springSort = Sort.by(Sort.Direction.DESC, "createdAt");
-        } else {
-            throw new BusinessException(
+        Sort springSort = switch (s) {
+            case "latest" -> Sort.by(Sort.Direction.DESC, "createdAt");
+            case "likes" -> Sort.by(Sort.Order.desc("likeCount"), Sort.Order.desc("createdAt"));
+            case "views" -> Sort.by(Sort.Order.desc("viewCount"), Sort.Order.desc("createdAt"));
+            default -> throw new BusinessException(
                     ErrorCode.VALIDATION_ERROR,
-                    "지원하지 않는 sort 입니다.",
+                    "지원하지 않는 sort 입니다. (latest/likes/views)",
                     Map.of("sort", s)
             );
-        }
+        };
 
         PageRequest pageable = PageRequest.of(page - 1, size, springSort);
-        var result = promptRepository.findByDeletedAtIsNullAndStatusNot(PromptStatus.DELETED, pageable);
+
+        List<Long> cids = safeIds(categoryIds);
+        List<Long> pids = safeIds(platformIds);
+
+        Specification<Prompt> spec = Specification
+                .where(PromptSpecifications.baseVisible())
+                .and(PromptSpecifications.hasAnyCategoryIds(cids))
+                .and(PromptSpecifications.hasAnyPlatformIds(pids));
+
+        var result = promptRepository.findAll(spec, pageable);
 
         List<PromptResponse> items = result.getContent()
                 .stream()
@@ -167,7 +182,6 @@ public class PromptService {
                 req.isAnonymous()
         );
 
-        // ✅ null이면 유지 / []면 전부 제거 / 값 있으면 교체 (soft-delete 제외)
         if (req.categoryIds() != null) {
             var categoryIds = safeIds(req.categoryIds());
             if (categoryIds.isEmpty()) {
