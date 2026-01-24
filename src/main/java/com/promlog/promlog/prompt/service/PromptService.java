@@ -67,14 +67,12 @@ public class PromptService {
 
         Prompt saved = promptRepository.save(prompt); // id 생성
 
-        // ✅ 1) 카테고리/플랫폼 ids 정리
         List<Long> categoryIds = safeIds(req.categoryIds());
         List<Long> platformIds = safeIds(req.platformIds());
 
-        // ✅ 2) soft-delete 제외 조회 + 검증 + 매핑
         if (!categoryIds.isEmpty()) {
             var categories = categoryRepository.findByIdInAndDeletedAtIsNull(categoryIds);
-            validateAllIdsExist(categoryIds, categories.size(), "categoryIds"); // 삭제/미존재 id 막힘
+            validateAllIdsExist(categoryIds, categories.size(), "categoryIds");
             saved.replaceCategories(categories);
         } else {
             saved.replaceCategories(List.of());
@@ -88,7 +86,6 @@ public class PromptService {
             saved.replacePlatforms(List.of());
         }
 
-        // 응답은 tags까지 확실히 포함하려고 fetch join으로 재조회
         var refreshed = promptRepository
                 .findDetailWithAuthorAndTags(saved.getId(), PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
@@ -96,7 +93,12 @@ public class PromptService {
         return PromptResponse.from(refreshed);
     }
 
-    // ✅ 변경: categoryIds, platformIds 추가
+    /**
+     * sort:
+     * - latest (기본): createdAt DESC
+     * - likes: likeCount DESC, createdAt DESC
+     * - views: viewCount DESC, createdAt DESC
+     */
     @Transactional(readOnly = true)
     public PromptListResponse list(String sort, int page, int size,
                                    List<Long> categoryIds, List<Long> platformIds) {
@@ -104,37 +106,31 @@ public class PromptService {
         if (page < 1) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
         if (size < 1 || size > 50) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "size는 1~50 이어야 합니다.");
 
-        String s = (sort == null || sort.isBlank()) ? "latest" : sort;
+        String s = (sort == null || sort.isBlank()) ? "latest" : sort.trim().toLowerCase();
 
-        Sort springSort;
-        if ("latest".equalsIgnoreCase(s)) {
-            springSort = Sort.by(Sort.Direction.DESC, "createdAt");
-        } else {
-            throw new BusinessException(
+        Sort springSort = switch (s) {
+            case "latest" -> Sort.by(Sort.Direction.DESC, "createdAt");
+            case "likes" -> Sort.by(Sort.Order.desc("likeCount"), Sort.Order.desc("createdAt"));
+            case "views" -> Sort.by(Sort.Order.desc("viewCount"), Sort.Order.desc("createdAt"));
+            default -> throw new BusinessException(
                     ErrorCode.VALIDATION_ERROR,
-                    "지원하지 않는 sort 입니다.",
+                    "지원하지 않는 sort 입니다. (latest/likes/views)",
                     Map.of("sort", s)
             );
-        }
+        };
 
         PageRequest pageable = PageRequest.of(page - 1, size, springSort);
 
-        // ✅ ids sanitize (null/중복/0 이하 제거)
         List<Long> cids = safeIds(categoryIds);
         List<Long> pids = safeIds(platformIds);
 
-        // ✅ 필터 spec 조합
         Specification<Prompt> spec = Specification
                 .where(PromptSpecifications.baseVisible())
                 .and(PromptSpecifications.hasAnyCategoryIds(cids))
                 .and(PromptSpecifications.hasAnyPlatformIds(pids));
 
-        // ✅ spec 기반 조회
         var result = promptRepository.findAll(spec, pageable);
 
-        // ⚠️ spec 조회는 EntityGraph가 안 붙어서 author/tags가 LAZY일 수 있음
-        // 하지만 readOnly 트랜잭션 안에서 접근하면 보통 OK.
-        // 성능 최적화가 필요해지면 "ID 페이지 -> fetch join 재조회"로 개선하면 됨.
         List<PromptResponse> items = result.getContent()
                 .stream()
                 .map(PromptResponse::from)
@@ -186,7 +182,6 @@ public class PromptService {
                 req.isAnonymous()
         );
 
-        // ✅ null이면 유지 / []면 전부 제거 / 값 있으면 교체 (soft-delete 제외)
         if (req.categoryIds() != null) {
             var categoryIds = safeIds(req.categoryIds());
             if (categoryIds.isEmpty()) {
