@@ -8,26 +8,47 @@ import java.util.List;
 
 public record PromptResponse(
         Long id,
-        Long authorAccountId,
-        String authorNickname,
-        String title,
-        String description,
-        String prompt,
-        String tip,
-        String sourceUrl,
-        boolean isAnonymous,
         PromptStatus status,
-        int likeCount,
-        long viewCount,
-        long copyCount,
-        LocalDateTime createdAt,
 
-        // ✅ 추가
-        List<TagDto> categories,
-        List<TagDto> platforms
+        Author author,
+        Content content,
+        Stats stats,
+        Tags tags
 ) {
+
+    // 👤 작성자 정보 그룹
+    public record Author(
+            Long id,
+            String nickname,
+            boolean isAnonymous
+    ) {}
+
+    // 📝 본문 정보 그룹
+    public record Content(
+            String title,
+            String description,
+            String prompt,
+            String tip,
+            String sourceUrl,
+            LocalDateTime createdAt
+    ) {}
+
+    // 📊 통계 정보 그룹
+    public record Stats(
+            int likeCount,
+            long viewCount,
+            long copyCount
+    ) {}
+
+    // 🏷 카테고리/플랫폼 그룹
+    public record Tags(
+            List<TagDto> categories,
+            List<TagDto> platforms
+    ) {}
+
     public static PromptResponse from(Prompt p) {
-        String nickname = p.isAnonymous() ? null : p.getAuthor().getNickname();
+        boolean anonymous = p.isAnonymous();
+        String nickname = anonymous ? null : p.getAuthor().getNickname();
 
         List<TagDto> categories = p.getPromptCategories().stream()
                 .map(pc -> new TagDto(
@@ -47,21 +68,26 @@ public record PromptResponse(
 
         return new PromptResponse(
                 p.getId(),
-                p.getAuthorAccountId(),
-                nickname,
-                p.getTitle(),
-                p.getDescription(),
-                p.getPrompt(),
-                p.getTip(),
-                p.getSourceUrl(),
-                p.isAnonymous(),
                 p.getStatus(),
-                p.getLikeCount(),
-                p.getViewCount(),
-                p.getCopyCount(),
-                p.getCreatedAt(),
-                categories,
-                platforms
+                new Author(
+                        p.getAuthorAccountId(),
+                        nickname,
+                        anonymous
+                ),
+                new Content(
+                        p.getTitle(),
+                        p.getDescription(),
+                        p.getPrompt(),
+                        p.getTip(),
+                        p.getSourceUrl(),
+                        p.getCreatedAt()
+                ),
+                new Stats(
+                        p.getLikeCount(),
+                        p.getViewCount(),
+                        p.getCopyCount()
+                ),
+                new Tags(categories, platforms)
         );
     }
 }
