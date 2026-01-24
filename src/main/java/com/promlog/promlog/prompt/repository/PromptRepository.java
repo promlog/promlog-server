@@ -9,12 +9,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
 public interface PromptRepository extends JpaRepository<Prompt, Long>, JpaSpecificationExecutor<Prompt> {
 
-    // ✅ 목록: author + tags까지 같이 로딩 (categories/platforms 응답에 필요)
     @EntityGraph(attributePaths = {
             "author",
             "promptCategories", "promptCategories.category",
@@ -44,7 +44,36 @@ public interface PromptRepository extends JpaRepository<Prompt, Long>, JpaSpecif
     """)
     int increaseCopyCount(Long id);
 
-    // ✅ 내 글 목록: author + tags
+    // ✅ 좋아요 카운트 +1
+    @Modifying(clearAutomatically = true)
+    @Query("""
+        update Prompt p
+           set p.likeCount = p.likeCount + 1
+         where p.id = :id
+           and p.deletedAt is null
+           and p.status <> 'DELETED'
+    """)
+    int increaseLikeCount(Long id);
+
+    // ✅ 좋아요 카운트 -1 (0 아래로 안 내려가게)
+    @Modifying(clearAutomatically = true)
+    @Query("""
+        update Prompt p
+           set p.likeCount = case when p.likeCount > 0 then p.likeCount - 1 else 0 end
+         where p.id = :id
+           and p.deletedAt is null
+           and p.status <> 'DELETED'
+    """)
+    int decreaseLikeCount(Long id);
+
+    // ✅ likeCount 조회 (null 방지)
+    @Query("""
+        select coalesce(p.likeCount, 0)
+        from Prompt p
+        where p.id = :id
+    """)
+    int findLikeCountOrZero(Long id);
+
     @EntityGraph(attributePaths = {
             "author",
             "promptCategories", "promptCategories.category",
@@ -56,7 +85,6 @@ public interface PromptRepository extends JpaRepository<Prompt, Long>, JpaSpecif
             Pageable pageable
     );
 
-    // ✅ 상세: author + tags fetch join (viewCount 증가 후 조회에 사용)
     @Query("""
         select distinct p
         from Prompt p
@@ -70,4 +98,20 @@ public interface PromptRepository extends JpaRepository<Prompt, Long>, JpaSpecif
           and p.status <> :status
     """)
     Optional<Prompt> findDetailWithAuthorAndTags(Long id, PromptStatus status);
+
+    @Query("""
+        select p
+          from Prompt p
+          join PromptLike pl
+            on pl.id.promptId = p.id
+         where pl.id.accountId = :accountId
+           and pl.deletedAt is null
+           and p.deletedAt is null
+           and p.status <> :deletedStatus
+    """)
+    Page<Prompt> findLikedPrompts(
+            @Param("accountId") long accountId,
+            @Param("deletedStatus") PromptStatus deletedStatus,
+            Pageable pageable
+    );
 }

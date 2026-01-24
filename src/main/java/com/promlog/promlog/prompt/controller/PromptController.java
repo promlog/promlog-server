@@ -1,6 +1,7 @@
 package com.promlog.promlog.prompt.controller;
 
 import com.promlog.promlog.global.response.ApiResponse;
+import com.promlog.promlog.prompt.dto.LikeResponse;
 import com.promlog.promlog.prompt.dto.PromptCreateRequest;
 import com.promlog.promlog.prompt.dto.PromptListResponse;
 import com.promlog.promlog.prompt.dto.PromptResponse;
@@ -33,15 +34,6 @@ public class PromptController {
         return ApiResponse.ok(promptService.create(accountId, req));
     }
 
-    /**
-     * sort:
-     * - latest (기본)
-     * - likes  (좋아요 많은 순)
-     * - views  (조회수 많은 순)
-     *
-     * 예)
-     * /api/prompts?sort=likes&categoryIds=1,3&platformIds=2&page=1&size=20
-     */
     @GetMapping
     public ApiResponse<PromptListResponse> list(
             @RequestParam(required = false, defaultValue = "latest") String sort,
@@ -92,5 +84,35 @@ public class PromptController {
     ) {
         long accountId = (long) authentication.getPrincipal();
         return ApiResponse.ok(promptService.listMine(accountId, page, size));
+    }
+
+    // ✅ 좋아요
+    @PostMapping("/{promptId}/likes")
+    public ApiResponse<LikeResponse> like(
+            Authentication authentication,
+            @PathVariable Long promptId
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.like(accountId, promptId));
+    }
+
+    // ✅ 좋아요 취소
+    @DeleteMapping("/{promptId}/likes")
+    public ApiResponse<LikeResponse> unlike(
+            Authentication authentication,
+            @PathVariable Long promptId
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.unlike(accountId, promptId));
+    }
+
+    @GetMapping("/me/likes")
+    public ApiResponse<PromptListResponse> myLikedPrompts(
+            Authentication authentication,
+            @RequestParam(required = false, defaultValue = "1") int page,
+            @RequestParam(required = false, defaultValue = "20") int size
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.listLiked(accountId, page, size));
     }
 }
