@@ -5,12 +5,14 @@ import com.promlog.promlog.account.repository.AccountRepository;
 import com.promlog.promlog.global.error.BusinessException;
 import com.promlog.promlog.global.error.ErrorCode;
 import com.promlog.promlog.global.response.PageMeta;
+import com.promlog.promlog.prompt.category.repository.CategoryRepository;
 import com.promlog.promlog.prompt.domain.Prompt;
 import com.promlog.promlog.prompt.domain.PromptStatus;
 import com.promlog.promlog.prompt.dto.PromptCreateRequest;
 import com.promlog.promlog.prompt.dto.PromptListResponse;
 import com.promlog.promlog.prompt.dto.PromptResponse;
 import com.promlog.promlog.prompt.dto.PromptUpdateRequest;
+import com.promlog.promlog.prompt.platform.repository.PlatformRepository;
 import com.promlog.promlog.prompt.repository.PromptRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -18,21 +20,26 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Service
 public class PromptService {
 
     private final PromptRepository promptRepository;
     private final AccountRepository accountRepository;
+    private final CategoryRepository categoryRepository;
+    private final PlatformRepository platformRepository;
 
     public PromptService(
             PromptRepository promptRepository,
-            AccountRepository accountRepository
+            AccountRepository accountRepository,
+            CategoryRepository categoryRepository,
+            PlatformRepository platformRepository
     ) {
         this.promptRepository = promptRepository;
         this.accountRepository = accountRepository;
+        this.categoryRepository = categoryRepository;
+        this.platformRepository = platformRepository;
     }
 
     @Transactional
@@ -56,8 +63,35 @@ public class PromptService {
                 req.isAnonymous()
         );
 
-        Prompt saved = promptRepository.save(prompt);
-        return PromptResponse.from(saved);
+        Prompt saved = promptRepository.save(prompt); // id 생성
+
+        // ✅ 1) 카테고리/플랫폼 ids 정리
+        List<Long> categoryIds = safeIds(req.categoryIds());
+        List<Long> platformIds = safeIds(req.platformIds());
+
+        // ✅ 2) soft-delete 제외 조회 + 검증 + 매핑
+        if (!categoryIds.isEmpty()) {
+            var categories = categoryRepository.findByIdInAndDeletedAtIsNull(categoryIds);
+            validateAllIdsExist(categoryIds, categories.size(), "categoryIds"); // 삭제/미존재 id 막힘
+            saved.replaceCategories(categories);
+        } else {
+            saved.replaceCategories(List.of());
+        }
+
+        if (!platformIds.isEmpty()) {
+            var platforms = platformRepository.findByIdInAndDeletedAtIsNull(platformIds);
+            validateAllIdsExist(platformIds, platforms.size(), "platformIds");
+            saved.replacePlatforms(platforms);
+        } else {
+            saved.replacePlatforms(List.of());
+        }
+
+        // 응답은 tags까지 확실히 포함하려고 fetch join으로 재조회
+        var refreshed = promptRepository
+                .findDetailWithAuthorAndTags(saved.getId(), PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        return PromptResponse.from(refreshed);
     }
 
     @Transactional(readOnly = true)
@@ -75,12 +109,11 @@ public class PromptService {
             throw new BusinessException(
                     ErrorCode.VALIDATION_ERROR,
                     "지원하지 않는 sort 입니다.",
-                    java.util.Map.of("sort", s)
+                    Map.of("sort", s)
             );
         }
 
         PageRequest pageable = PageRequest.of(page - 1, size, springSort);
-
         var result = promptRepository.findByDeletedAtIsNullAndStatusNot(PromptStatus.DELETED, pageable);
 
         List<PromptResponse> items = result.getContent()
@@ -108,7 +141,7 @@ public class PromptService {
         }
 
         var prompt = promptRepository
-                .findDetailWithAuthor(promptId, PromptStatus.DELETED)
+                .findDetailWithAuthorAndTags(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
         return PromptResponse.from(prompt);
@@ -116,6 +149,7 @@ public class PromptService {
 
     @Transactional
     public PromptResponse update(long accountId, Long promptId, PromptUpdateRequest req) {
+
         var prompt = promptRepository
                 .findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
@@ -133,7 +167,34 @@ public class PromptService {
                 req.isAnonymous()
         );
 
-        return PromptResponse.from(prompt);
+        // ✅ null이면 유지 / []면 전부 제거 / 값 있으면 교체 (soft-delete 제외)
+        if (req.categoryIds() != null) {
+            var categoryIds = safeIds(req.categoryIds());
+            if (categoryIds.isEmpty()) {
+                prompt.replaceCategories(List.of());
+            } else {
+                var categories = categoryRepository.findByIdInAndDeletedAtIsNull(categoryIds);
+                validateAllIdsExist(categoryIds, categories.size(), "categoryIds");
+                prompt.replaceCategories(categories);
+            }
+        }
+
+        if (req.platformIds() != null) {
+            var platformIds = safeIds(req.platformIds());
+            if (platformIds.isEmpty()) {
+                prompt.replacePlatforms(List.of());
+            } else {
+                var platforms = platformRepository.findByIdInAndDeletedAtIsNull(platformIds);
+                validateAllIdsExist(platformIds, platforms.size(), "platformIds");
+                prompt.replacePlatforms(platforms);
+            }
+        }
+
+        var refreshed = promptRepository
+                .findDetailWithAuthorAndTags(promptId, PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        return PromptResponse.from(refreshed);
     }
 
     @Transactional
@@ -203,5 +264,28 @@ public class PromptService {
         );
 
         return new PromptListResponse(items, meta);
+    }
+
+    /* ===============================
+       helpers
+       =============================== */
+
+    private static List<Long> safeIds(List<Long> ids) {
+        if (ids == null) return List.of();
+        return ids.stream()
+                .filter(Objects::nonNull)
+                .filter(v -> v > 0)
+                .distinct()
+                .toList();
+    }
+
+    private static void validateAllIdsExist(List<Long> requestedIds, int foundSize, String field) {
+        if (requestedIds.size() != foundSize) {
+            throw new BusinessException(
+                    ErrorCode.VALIDATION_ERROR,
+                    "존재하지 않거나 삭제된 ID가 포함되어 있습니다.",
+                    Map.of(field, requestedIds)
+            );
+        }
     }
 }

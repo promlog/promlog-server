@@ -36,6 +36,10 @@ public class SecurityConfig {
                         // swagger
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-ui.html").permitAll()
 
+                        // ✅ 카테고리/플랫폼 공개
+                        .requestMatchers(HttpMethod.GET, "/api/categories").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/platforms").permitAll()
+
                         // ✅ 내가 쓴 프롬프트 (로그인 필요) — 먼저!
                         .requestMatchers(HttpMethod.GET, "/api/prompts/me").authenticated()
 

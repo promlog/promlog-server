@@ -4,6 +4,7 @@ import com.promlog.promlog.prompt.domain.Prompt;
 import com.promlog.promlog.prompt.domain.PromptStatus;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record PromptResponse(
         Long id,
@@ -19,10 +20,30 @@ public record PromptResponse(
         int likeCount,
         long viewCount,
         long copyCount,
-        LocalDateTime createdAt
+        LocalDateTime createdAt,
+
+        // ✅ 추가
+        List<TagDto> categories,
+        List<TagDto> platforms
 ) {
     public static PromptResponse from(Prompt p) {
         String nickname = p.isAnonymous() ? null : p.getAuthor().getNickname();
+
+        List<TagDto> categories = p.getPromptCategories().stream()
+                .map(pc -> new TagDto(
+                        pc.getCategory().getId(),
+                        pc.getCategory().getName(),
+                        pc.getCategory().getSlug()
+                ))
+                .toList();
+
+        List<TagDto> platforms = p.getPromptPlatforms().stream()
+                .map(pp -> new TagDto(
+                        pp.getPlatform().getId(),
+                        pp.getPlatform().getName(),
+                        pp.getPlatform().getSlug()
+                ))
+                .toList();
 
         return new PromptResponse(
                 p.getId(),
@@ -38,7 +59,9 @@ public record PromptResponse(
                 p.getLikeCount(),
                 p.getViewCount(),
                 p.getCopyCount(),
-                p.getCreatedAt()
+                p.getCreatedAt(),
+                categories,
+                platforms
         );
     }
 }
