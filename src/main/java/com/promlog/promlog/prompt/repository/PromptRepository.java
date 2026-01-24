@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
@@ -97,4 +98,20 @@ public interface PromptRepository extends JpaRepository<Prompt, Long>, JpaSpecif
           and p.status <> :status
     """)
     Optional<Prompt> findDetailWithAuthorAndTags(Long id, PromptStatus status);
+
+    @Query("""
+        select p
+          from Prompt p
+          join PromptLike pl
+            on pl.id.promptId = p.id
+         where pl.id.accountId = :accountId
+           and pl.deletedAt is null
+           and p.deletedAt is null
+           and p.status <> :deletedStatus
+    """)
+    Page<Prompt> findLikedPrompts(
+            @Param("accountId") long accountId,
+            @Param("deletedStatus") PromptStatus deletedStatus,
+            Pageable pageable
+    );
 }

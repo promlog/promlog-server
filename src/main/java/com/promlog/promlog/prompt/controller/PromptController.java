@@ -105,4 +105,14 @@ public class PromptController {
         long accountId = (long) authentication.getPrincipal();
         return ApiResponse.ok(promptService.unlike(accountId, promptId));
     }
+
+    @GetMapping("/me/likes")
+    public ApiResponse<PromptListResponse> myLikedPrompts(
+            Authentication authentication,
+            @RequestParam(required = false, defaultValue = "1") int page,
+            @RequestParam(required = false, defaultValue = "20") int size
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.listLiked(accountId, page, size));
+    }
 }

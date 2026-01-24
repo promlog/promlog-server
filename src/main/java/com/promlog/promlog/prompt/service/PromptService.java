@@ -335,4 +335,39 @@ public class PromptService {
             );
         }
     }
+
+    @Transactional(readOnly = true)
+    public PromptListResponse listLiked(long accountId, int page, int size) {
+
+        if (page < 1) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
+        }
+        if (size < 1 || size > 50) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "size는 1~50 이어야 합니다.");
+        }
+
+        PageRequest pageable = PageRequest.of(
+                page - 1,
+                size,
+                Sort.by(Sort.Direction.DESC, "createdAt") // 좋아요 “최신순”
+        );
+
+        var result = promptRepository.findLikedPrompts(accountId, PromptStatus.DELETED, pageable);
+
+        var items = result.getContent()
+                .stream()
+                .map(PromptResponse::from)
+                .toList();
+
+        PageMeta meta = new PageMeta(
+                page,
+                size,
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.hasNext()
+        );
+
+        return new PromptListResponse(items, meta);
+    }
+
 }
