@@ -36,18 +36,24 @@ public class PromptController {
 
     @GetMapping
     public ApiResponse<PromptListResponse> list(
+            Authentication authentication, // ✅ 추가 (로그인 안 하면 null)
             @RequestParam(required = false, defaultValue = "latest") String sort,
             @RequestParam(required = false, defaultValue = "1") int page,
             @RequestParam(required = false, defaultValue = "20") int size,
             @RequestParam(required = false) List<Long> categoryIds,
             @RequestParam(required = false) List<Long> platformIds
     ) {
-        return ApiResponse.ok(promptService.list(sort, page, size, categoryIds, platformIds));
+        Long viewerAccountId = (authentication == null) ? null : (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.list(viewerAccountId, sort, page, size, categoryIds, platformIds));
     }
 
     @GetMapping("/{promptId}")
-    public ApiResponse<PromptResponse> detail(@PathVariable Long promptId) {
-        return ApiResponse.ok(promptService.getDetail(promptId));
+    public ApiResponse<PromptResponse> detail(
+            Authentication authentication, // ✅ 추가 (로그인 안 하면 null)
+            @PathVariable Long promptId
+    ) {
+        Long viewerAccountId = (authentication == null) ? null : (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.getDetail(viewerAccountId, promptId));
     }
 
     @PatchMapping("/{promptId}")
