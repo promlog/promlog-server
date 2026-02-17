@@ -53,12 +53,7 @@ public class PromptService {
     public PromptResponse create(long accountId, PromptCreateRequest req) {
 
         Account author = accountRepository.findById(accountId)
-                .orElseThrow(() ->
-                        new BusinessException(
-                                ErrorCode.NOT_FOUND,
-                                "작성자 계정을 찾을 수 없습니다."
-                        )
-                );
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "작성자 계정을 찾을 수 없습니다."));
 
         Prompt prompt = new Prompt(
                 author,
@@ -95,11 +90,11 @@ public class PromptService {
                 .findDetailWithAuthorAndTags(saved.getId(), PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        return PromptResponse.from(refreshed);
+        return PromptResponse.from(refreshed, false);
     }
 
     @Transactional(readOnly = true)
-    public PromptListResponse list(String sort, int page, int size,
+    public PromptListResponse list(Long viewerAccountId, String sort, int page, int size,
                                    List<Long> categoryIds, List<Long> platformIds) {
 
         if (page < 1) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
@@ -130,9 +125,21 @@ public class PromptService {
 
         var result = promptRepository.findAll(spec, pageable);
 
+        // ✅ 지금 페이지에 있는 promptId들 추출
+        List<Long> promptIds = result.getContent().stream()
+                .map(Prompt::getId)
+                .filter(Objects::nonNull)
+                .toList();
+
+        // ✅ 핵심: likedPromptIds를 "재할당 없이" final로 한 번에 만들기
+        final Set<Long> likedPromptIds =
+                (viewerAccountId == null || promptIds.isEmpty())
+                        ? Collections.emptySet()
+                        : new HashSet<>(promptLikeRepository.findActiveLikedPromptIds(viewerAccountId, promptIds));
+
         List<PromptResponse> items = result.getContent()
                 .stream()
-                .map(PromptResponse::from)
+                .map(p -> PromptResponse.from(p, likedPromptIds.contains(p.getId())))
                 .toList();
 
         PageMeta meta = new PageMeta(
@@ -147,7 +154,7 @@ public class PromptService {
     }
 
     @Transactional
-    public PromptResponse getDetail(Long promptId) {
+    public PromptResponse getDetail(Long viewerAccountId, Long promptId) {
 
         int updated = promptRepository.increaseViewCount(promptId);
         if (updated == 0) {
@@ -158,7 +165,12 @@ public class PromptService {
                 .findDetailWithAuthorAndTags(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        return PromptResponse.from(prompt);
+        boolean isLiked = false;
+        if (viewerAccountId != null) {
+            isLiked = promptLikeRepository.existsActive(promptId, viewerAccountId);
+        }
+
+        return PromptResponse.from(prompt, isLiked);
     }
 
     @Transactional
@@ -207,7 +219,7 @@ public class PromptService {
                 .findDetailWithAuthorAndTags(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        return PromptResponse.from(refreshed);
+        return PromptResponse.from(refreshed, false);
     }
 
     @Transactional
@@ -244,12 +256,8 @@ public class PromptService {
     @Transactional(readOnly = true)
     public PromptListResponse listMine(long accountId, int page, int size) {
 
-        if (page < 1) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
-        }
-        if (size < 1 || size > 50) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "size는 1~50 이어야 합니다.");
-        }
+        if (page < 1) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
+        if (size < 1 || size > 50) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "size는 1~50 이어야 합니다.");
 
         PageRequest pageable = PageRequest.of(
                 page - 1,
@@ -265,7 +273,7 @@ public class PromptService {
 
         var items = result.getContent()
                 .stream()
-                .map(PromptResponse::from)
+                .map(p -> PromptResponse.from(p, false))
                 .toList();
 
         PageMeta meta = new PageMeta(
@@ -313,6 +321,36 @@ public class PromptService {
         return new LikeResponse(false, likeCount);
     }
 
+    @Transactional(readOnly = true)
+    public PromptListResponse listLiked(long accountId, int page, int size) {
+
+        if (page < 1) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
+        if (size < 1 || size > 50) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "size는 1~50 이어야 합니다.");
+
+        PageRequest pageable = PageRequest.of(
+                page - 1,
+                size,
+                Sort.by(Sort.Direction.DESC, "createdAt")
+        );
+
+        var result = promptRepository.findLikedPrompts(accountId, PromptStatus.DELETED, pageable);
+
+        var items = result.getContent()
+                .stream()
+                .map(p -> PromptResponse.from(p, true))
+                .toList();
+
+        PageMeta meta = new PageMeta(
+                page,
+                size,
+                result.getTotalElements(),
+                result.getTotalPages(),
+                result.hasNext()
+        );
+
+        return new PromptListResponse(items, meta);
+    }
+
     /* ===============================
        helpers
        =============================== */
@@ -335,39 +373,4 @@ public class PromptService {
             );
         }
     }
-
-    @Transactional(readOnly = true)
-    public PromptListResponse listLiked(long accountId, int page, int size) {
-
-        if (page < 1) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
-        }
-        if (size < 1 || size > 50) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "size는 1~50 이어야 합니다.");
-        }
-
-        PageRequest pageable = PageRequest.of(
-                page - 1,
-                size,
-                Sort.by(Sort.Direction.DESC, "createdAt") // 좋아요 “최신순”
-        );
-
-        var result = promptRepository.findLikedPrompts(accountId, PromptStatus.DELETED, pageable);
-
-        var items = result.getContent()
-                .stream()
-                .map(PromptResponse::from)
-                .toList();
-
-        PageMeta meta = new PageMeta(
-                page,
-                size,
-                result.getTotalElements(),
-                result.getTotalPages(),
-                result.hasNext()
-        );
-
-        return new PromptListResponse(items, meta);
-    }
-
 }

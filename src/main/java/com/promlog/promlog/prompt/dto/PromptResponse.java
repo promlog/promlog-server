@@ -37,7 +37,8 @@ public record PromptResponse(
     public record Stats(
             int likeCount,
             long viewCount,
-            long copyCount
+            long copyCount,
+            boolean isLiked // ✅ 추가
     ) {}
 
     // 🏷 카테고리/플랫폼 그룹
@@ -46,7 +47,13 @@ public record PromptResponse(
             List<TagDto> platforms
     ) {}
 
+    // ✅ 기존 호출부 호환용 (기본값: false)
     public static PromptResponse from(Prompt p) {
+        return from(p, false);
+    }
+
+    // ✅ 신규: 로그인 사용자의 좋아요 여부까지 포함
+    public static PromptResponse from(Prompt p, boolean isLiked) {
         boolean anonymous = p.isAnonymous();
         String nickname = anonymous ? null : p.getAuthor().getNickname();
 
@@ -70,7 +77,7 @@ public record PromptResponse(
                 p.getId(),
                 p.getStatus(),
                 new Author(
-                        p.getAuthorAccountId(),
+                        p.getAuthorAccountId(), // 익명이어도 id를 내려줄지 정책에 따라 바꿔도 됨
                         nickname,
                         anonymous
                 ),
@@ -85,7 +92,8 @@ public record PromptResponse(
                 new Stats(
                         p.getLikeCount(),
                         p.getViewCount(),
-                        p.getCopyCount()
+                        p.getCopyCount(),
+                        isLiked
                 ),
                 new Tags(categories, platforms)
         );
