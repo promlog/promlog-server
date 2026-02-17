@@ -125,13 +125,11 @@ public class PromptService {
 
         var result = promptRepository.findAll(spec, pageable);
 
-        // ✅ 지금 페이지에 있는 promptId들 추출
         List<Long> promptIds = result.getContent().stream()
                 .map(Prompt::getId)
                 .filter(Objects::nonNull)
                 .toList();
 
-        // ✅ 핵심: likedPromptIds를 "재할당 없이" final로 한 번에 만들기
         final Set<Long> likedPromptIds =
                 (viewerAccountId == null || promptIds.isEmpty())
                         ? Collections.emptySet()
@@ -296,11 +294,8 @@ public class PromptService {
         promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        int affected = promptLikeRepository.like(promptId, accountId);
-
-        if (affected > 0) {
-            promptRepository.increaseLikeCount(promptId);
-        }
+        // ✅ 트리거가 like_count를 관리하므로, 서비스에서 카운트 증감하지 않음
+        promptLikeRepository.like(promptId, accountId);
 
         int likeCount = promptRepository.findLikeCountOrZero(promptId);
         return new LikeResponse(true, likeCount);
@@ -311,11 +306,8 @@ public class PromptService {
         promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        int affected = promptLikeRepository.unlike(promptId, accountId);
-
-        if (affected == 1) {
-            promptRepository.decreaseLikeCount(promptId);
-        }
+        // ✅ 트리거가 like_count를 관리하므로, 서비스에서 카운트 증감하지 않음
+        promptLikeRepository.unlike(promptId, accountId);
 
         int likeCount = promptRepository.findLikeCountOrZero(promptId);
         return new LikeResponse(false, likeCount);
