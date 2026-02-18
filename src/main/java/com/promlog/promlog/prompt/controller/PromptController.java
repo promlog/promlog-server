@@ -1,6 +1,7 @@
 package com.promlog.promlog.prompt.controller;
 
 import com.promlog.promlog.global.response.ApiResponse;
+import com.promlog.promlog.prompt.dto.BookmarkResponse;
 import com.promlog.promlog.prompt.dto.LikeResponse;
 import com.promlog.promlog.prompt.dto.PromptCreateRequest;
 import com.promlog.promlog.prompt.dto.PromptListResponse;
@@ -36,7 +37,7 @@ public class PromptController {
 
     @GetMapping
     public ApiResponse<PromptListResponse> list(
-            Authentication authentication, // ✅ 추가 (로그인 안 하면 null)
+            Authentication authentication, // ✅ 로그인 안 하면 null
             @RequestParam(required = false, defaultValue = "latest") String sort,
             @RequestParam(required = false, defaultValue = "1") int page,
             @RequestParam(required = false, defaultValue = "20") int size,
@@ -49,7 +50,7 @@ public class PromptController {
 
     @GetMapping("/{promptId}")
     public ApiResponse<PromptResponse> detail(
-            Authentication authentication, // ✅ 추가 (로그인 안 하면 null)
+            Authentication authentication, // ✅ 로그인 안 하면 null
             @PathVariable Long promptId
     ) {
         Long viewerAccountId = (authentication == null) ? null : (long) authentication.getPrincipal();
@@ -92,6 +93,10 @@ public class PromptController {
         return ApiResponse.ok(promptService.listMine(accountId, page, size));
     }
 
+    /* ===============================
+       likes
+       =============================== */
+
     // ✅ 좋아요
     @PostMapping("/{promptId}/likes")
     public ApiResponse<LikeResponse> like(
@@ -120,5 +125,19 @@ public class PromptController {
     ) {
         long accountId = (long) authentication.getPrincipal();
         return ApiResponse.ok(promptService.listLiked(accountId, page, size));
+    }
+
+    /* ===============================
+       bookmarks
+       =============================== */
+
+    // ✅ 북마크 추가
+    @PostMapping("/{promptId}/bookmarks")
+    public ApiResponse<BookmarkResponse> bookmark(
+            Authentication authentication,
+            @PathVariable Long promptId
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.bookmark(accountId, promptId));
     }
 }

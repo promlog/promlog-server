@@ -114,4 +114,13 @@ public interface PromptRepository extends JpaRepository<Prompt, Long>, JpaSpecif
             @Param("deletedStatus") PromptStatus deletedStatus,
             Pageable pageable
     );
+
+    // ✅ bookmarkCount 조회 (null 방지)
+    @Query("""
+        select coalesce(p.bookmarkCount, 0)
+        from Prompt p
+        where p.id = :id
+    """)
+    int findBookmarkCountOrZero(Long id);
+
 }

@@ -8,12 +8,14 @@ import com.promlog.promlog.global.response.PageMeta;
 import com.promlog.promlog.prompt.category.repository.CategoryRepository;
 import com.promlog.promlog.prompt.domain.Prompt;
 import com.promlog.promlog.prompt.domain.PromptStatus;
+import com.promlog.promlog.prompt.dto.BookmarkResponse;
 import com.promlog.promlog.prompt.dto.LikeResponse;
 import com.promlog.promlog.prompt.dto.PromptCreateRequest;
 import com.promlog.promlog.prompt.dto.PromptListResponse;
 import com.promlog.promlog.prompt.dto.PromptResponse;
 import com.promlog.promlog.prompt.dto.PromptUpdateRequest;
 import com.promlog.promlog.prompt.platform.repository.PlatformRepository;
+import com.promlog.promlog.prompt.repository.PromptBookmarkRepository;
 import com.promlog.promlog.prompt.repository.PromptLikeRepository;
 import com.promlog.promlog.prompt.repository.PromptRepository;
 import com.promlog.promlog.prompt.repository.PromptSpecifications;
@@ -31,6 +33,8 @@ public class PromptService {
 
     private final PromptRepository promptRepository;
     private final PromptLikeRepository promptLikeRepository;
+    private final PromptBookmarkRepository promptBookmarkRepository;
+
     private final AccountRepository accountRepository;
     private final CategoryRepository categoryRepository;
     private final PlatformRepository platformRepository;
@@ -38,12 +42,14 @@ public class PromptService {
     public PromptService(
             PromptRepository promptRepository,
             PromptLikeRepository promptLikeRepository,
+            PromptBookmarkRepository promptBookmarkRepository,
             AccountRepository accountRepository,
             CategoryRepository categoryRepository,
             PlatformRepository platformRepository
     ) {
         this.promptRepository = promptRepository;
         this.promptLikeRepository = promptLikeRepository;
+        this.promptBookmarkRepository = promptBookmarkRepository;
         this.accountRepository = accountRepository;
         this.categoryRepository = categoryRepository;
         this.platformRepository = platformRepository;
@@ -341,6 +347,22 @@ public class PromptService {
         );
 
         return new PromptListResponse(items, meta);
+    }
+
+    /* ===============================
+       bookmarks
+       =============================== */
+
+    @Transactional
+    public BookmarkResponse bookmark(long accountId, Long promptId) {
+        promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        // ✅ 트리거가 bookmark_count를 관리하므로, 서비스에서 카운트 증감하지 않음
+        promptBookmarkRepository.bookmark(promptId, accountId);
+
+        int bookmarkCount = promptRepository.findBookmarkCountOrZero(promptId);
+        return new BookmarkResponse(true, bookmarkCount);
     }
 
     /* ===============================
