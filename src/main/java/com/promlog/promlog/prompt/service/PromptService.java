@@ -8,12 +8,14 @@ import com.promlog.promlog.global.response.PageMeta;
 import com.promlog.promlog.prompt.category.repository.CategoryRepository;
 import com.promlog.promlog.prompt.domain.Prompt;
 import com.promlog.promlog.prompt.domain.PromptStatus;
+import com.promlog.promlog.prompt.dto.BookmarkResponse;
 import com.promlog.promlog.prompt.dto.LikeResponse;
 import com.promlog.promlog.prompt.dto.PromptCreateRequest;
 import com.promlog.promlog.prompt.dto.PromptListResponse;
 import com.promlog.promlog.prompt.dto.PromptResponse;
 import com.promlog.promlog.prompt.dto.PromptUpdateRequest;
 import com.promlog.promlog.prompt.platform.repository.PlatformRepository;
+import com.promlog.promlog.prompt.repository.PromptBookmarkRepository;
 import com.promlog.promlog.prompt.repository.PromptLikeRepository;
 import com.promlog.promlog.prompt.repository.PromptRepository;
 import com.promlog.promlog.prompt.repository.PromptSpecifications;
@@ -31,6 +33,8 @@ public class PromptService {
 
     private final PromptRepository promptRepository;
     private final PromptLikeRepository promptLikeRepository;
+    private final PromptBookmarkRepository promptBookmarkRepository;
+
     private final AccountRepository accountRepository;
     private final CategoryRepository categoryRepository;
     private final PlatformRepository platformRepository;
@@ -38,12 +42,14 @@ public class PromptService {
     public PromptService(
             PromptRepository promptRepository,
             PromptLikeRepository promptLikeRepository,
+            PromptBookmarkRepository promptBookmarkRepository,
             AccountRepository accountRepository,
             CategoryRepository categoryRepository,
             PlatformRepository platformRepository
     ) {
         this.promptRepository = promptRepository;
         this.promptLikeRepository = promptLikeRepository;
+        this.promptBookmarkRepository = promptBookmarkRepository;
         this.accountRepository = accountRepository;
         this.categoryRepository = categoryRepository;
         this.platformRepository = platformRepository;
@@ -65,7 +71,7 @@ public class PromptService {
                 req.isAnonymous()
         );
 
-        Prompt saved = promptRepository.save(prompt); // id 생성
+        Prompt saved = promptRepository.save(prompt);
 
         List<Long> categoryIds = safeIds(req.categoryIds());
         List<Long> platformIds = safeIds(req.platformIds());
@@ -294,7 +300,6 @@ public class PromptService {
         promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        // ✅ 트리거가 like_count를 관리하므로, 서비스에서 카운트 증감하지 않음
         promptLikeRepository.like(promptId, accountId);
 
         int likeCount = promptRepository.findLikeCountOrZero(promptId);
@@ -306,7 +311,6 @@ public class PromptService {
         promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        // ✅ 트리거가 like_count를 관리하므로, 서비스에서 카운트 증감하지 않음
         promptLikeRepository.unlike(promptId, accountId);
 
         int likeCount = promptRepository.findLikeCountOrZero(promptId);
@@ -340,6 +344,80 @@ public class PromptService {
                 result.hasNext()
         );
 
+        return new PromptListResponse(items, meta);
+    }
+
+    /* ===============================
+       bookmarks
+       =============================== */
+
+    @Transactional
+    public BookmarkResponse bookmark(long accountId, Long promptId) {
+        promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        promptBookmarkRepository.bookmark(promptId, accountId);
+
+        int bookmarkCount = promptRepository.findBookmarkCountOrZero(promptId);
+        return new BookmarkResponse(true, bookmarkCount);
+    }
+
+    @Transactional
+    public BookmarkResponse unbookmark(long accountId, Long promptId) {
+        promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        // 멱등 처리
+        if (!promptBookmarkRepository.existsActive(promptId, accountId)) {
+            int bookmarkCount = promptRepository.findBookmarkCountOrZero(promptId);
+            return new BookmarkResponse(false, bookmarkCount);
+        }
+
+        promptBookmarkRepository.unbookmark(promptId, accountId);
+
+        int bookmarkCount = promptRepository.findBookmarkCountOrZero(promptId);
+        return new BookmarkResponse(false, bookmarkCount);
+    }
+
+    @Transactional(readOnly = true)
+    public PromptListResponse listBookmarked(long accountId, int page, int size) {
+
+        if (page < 1) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
+        if (size < 1 || size > 50) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "size는 1~50 이어야 합니다.");
+
+        long total = promptBookmarkRepository.countActiveByAccount(accountId);
+        int totalPages = (total == 0) ? 0 : (int) ((total + size - 1) / size);
+        boolean hasNext = page < totalPages;
+
+        int offset = (page - 1) * size;
+
+        List<Long> bookmarkedIds = promptBookmarkRepository.findActiveBookmarkedPromptIds(accountId, size, offset);
+        if (bookmarkedIds.isEmpty()) {
+            PageMeta meta = new PageMeta(page, size, total, totalPages, false);
+            return new PromptListResponse(List.of(), meta);
+        }
+
+        // prompts 조회 (author/tags 포함)
+        List<Prompt> prompts = promptRepository.findByIdInVisibleWithGraph(bookmarkedIds, PromptStatus.DELETED);
+
+        // 좋아요 상태도 같이 내려주고 싶으면(북마크 목록에서 하트도 보여줄 거니까)
+        Set<Long> likedPromptIds = new HashSet<>(promptLikeRepository.findActiveLikedPromptIds(accountId, bookmarkedIds));
+
+        // id 순서(북마크 최신순) 보존
+        Map<Long, Prompt> promptMap = new HashMap<>();
+        for (Prompt p : prompts) {
+            promptMap.put(p.getId(), p);
+        }
+
+        List<PromptResponse> items = new ArrayList<>();
+        for (Long id : bookmarkedIds) {
+            Prompt p = promptMap.get(id);
+            if (p == null) continue; // 삭제되었거나 숨김 등으로 빠질 수 있음
+            boolean isLiked = likedPromptIds.contains(id);
+            items.add(PromptResponse.from(p, isLiked));
+        }
+
+        PageMeta meta = new PageMeta(page, size, total, totalPages, hasNext);
         return new PromptListResponse(items, meta);
     }
 

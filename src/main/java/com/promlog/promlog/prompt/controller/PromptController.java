@@ -1,6 +1,7 @@
 package com.promlog.promlog.prompt.controller;
 
 import com.promlog.promlog.global.response.ApiResponse;
+import com.promlog.promlog.prompt.dto.BookmarkResponse;
 import com.promlog.promlog.prompt.dto.LikeResponse;
 import com.promlog.promlog.prompt.dto.PromptCreateRequest;
 import com.promlog.promlog.prompt.dto.PromptListResponse;
@@ -36,7 +37,7 @@ public class PromptController {
 
     @GetMapping
     public ApiResponse<PromptListResponse> list(
-            Authentication authentication, // ✅ 추가 (로그인 안 하면 null)
+            Authentication authentication, // ✅ 로그인 안 하면 null
             @RequestParam(required = false, defaultValue = "latest") String sort,
             @RequestParam(required = false, defaultValue = "1") int page,
             @RequestParam(required = false, defaultValue = "20") int size,
@@ -49,7 +50,7 @@ public class PromptController {
 
     @GetMapping("/{promptId}")
     public ApiResponse<PromptResponse> detail(
-            Authentication authentication, // ✅ 추가 (로그인 안 하면 null)
+            Authentication authentication, // ✅ 로그인 안 하면 null
             @PathVariable Long promptId
     ) {
         Long viewerAccountId = (authentication == null) ? null : (long) authentication.getPrincipal();
@@ -92,7 +93,10 @@ public class PromptController {
         return ApiResponse.ok(promptService.listMine(accountId, page, size));
     }
 
-    // ✅ 좋아요
+    /* ===============================
+       likes
+       =============================== */
+
     @PostMapping("/{promptId}/likes")
     public ApiResponse<LikeResponse> like(
             Authentication authentication,
@@ -102,7 +106,6 @@ public class PromptController {
         return ApiResponse.ok(promptService.like(accountId, promptId));
     }
 
-    // ✅ 좋아요 취소
     @DeleteMapping("/{promptId}/likes")
     public ApiResponse<LikeResponse> unlike(
             Authentication authentication,
@@ -120,5 +123,38 @@ public class PromptController {
     ) {
         long accountId = (long) authentication.getPrincipal();
         return ApiResponse.ok(promptService.listLiked(accountId, page, size));
+    }
+
+    /* ===============================
+       bookmarks
+       =============================== */
+
+    @PostMapping("/{promptId}/bookmarks")
+    public ApiResponse<BookmarkResponse> bookmark(
+            Authentication authentication,
+            @PathVariable Long promptId
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.bookmark(accountId, promptId));
+    }
+
+    @DeleteMapping("/{promptId}/bookmarks")
+    public ApiResponse<BookmarkResponse> unbookmark(
+            Authentication authentication,
+            @PathVariable Long promptId
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.unbookmark(accountId, promptId));
+    }
+
+    // ✅ 내 북마크 목록 조회
+    @GetMapping("/me/bookmarks")
+    public ApiResponse<PromptListResponse> myBookmarkedPrompts(
+            Authentication authentication,
+            @RequestParam(required = false, defaultValue = "1") int page,
+            @RequestParam(required = false, defaultValue = "20") int size
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.listBookmarked(accountId, page, size));
     }
 }

@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface PromptRepository extends JpaRepository<Prompt, Long>, JpaSpecificationExecutor<Prompt> {
@@ -44,29 +45,6 @@ public interface PromptRepository extends JpaRepository<Prompt, Long>, JpaSpecif
     """)
     int increaseCopyCount(Long id);
 
-    // ✅ 좋아요 카운트 +1
-    @Modifying(clearAutomatically = true)
-    @Query("""
-        update Prompt p
-           set p.likeCount = p.likeCount + 1
-         where p.id = :id
-           and p.deletedAt is null
-           and p.status <> 'DELETED'
-    """)
-    int increaseLikeCount(Long id);
-
-    // ✅ 좋아요 카운트 -1 (0 아래로 안 내려가게)
-    @Modifying(clearAutomatically = true)
-    @Query("""
-        update Prompt p
-           set p.likeCount = case when p.likeCount > 0 then p.likeCount - 1 else 0 end
-         where p.id = :id
-           and p.deletedAt is null
-           and p.status <> 'DELETED'
-    """)
-    int decreaseLikeCount(Long id);
-
-    // ✅ likeCount 조회 (null 방지)
     @Query("""
         select coalesce(p.likeCount, 0)
         from Prompt p
@@ -114,4 +92,27 @@ public interface PromptRepository extends JpaRepository<Prompt, Long>, JpaSpecif
             @Param("deletedStatus") PromptStatus deletedStatus,
             Pageable pageable
     );
+
+    @Query("""
+        select coalesce(p.bookmarkCount, 0)
+        from Prompt p
+        where p.id = :id
+    """)
+    int findBookmarkCountOrZero(Long id);
+
+    // ✅ 북마크 목록 조회용: id 리스트로 한 번에 가져오되 author/tags까지 같이
+    @EntityGraph(attributePaths = {
+            "author",
+            "promptCategories", "promptCategories.category",
+            "promptPlatforms", "promptPlatforms.platform"
+    })
+    @Query("""
+        select p
+        from Prompt p
+        where p.id in :ids
+          and p.deletedAt is null
+          and p.status <> :deletedStatus
+    """)
+    List<Prompt> findByIdInVisibleWithGraph(@Param("ids") List<Long> ids,
+                                            @Param("deletedStatus") PromptStatus deletedStatus);
 }
