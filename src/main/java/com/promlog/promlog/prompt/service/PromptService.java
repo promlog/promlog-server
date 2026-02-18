@@ -356,7 +356,6 @@ public class PromptService {
         promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        // ✅ (prompt_id, account_id) PK 기반 upsert + deleted_at 복구
         promptBookmarkRepository.bookmark(promptId, accountId);
 
         int bookmarkCount = promptRepository.findBookmarkCountOrZero(promptId);
@@ -368,17 +367,58 @@ public class PromptService {
         promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        // ✅ 이미 북마크 안 한 상태면 그냥 false 반환(멱등)
+        // 멱등 처리
         if (!promptBookmarkRepository.existsActive(promptId, accountId)) {
             int bookmarkCount = promptRepository.findBookmarkCountOrZero(promptId);
             return new BookmarkResponse(false, bookmarkCount);
         }
 
-        // ✅ soft delete (트리거가 bookmark_count -1 처리)
         promptBookmarkRepository.unbookmark(promptId, accountId);
 
         int bookmarkCount = promptRepository.findBookmarkCountOrZero(promptId);
         return new BookmarkResponse(false, bookmarkCount);
+    }
+
+    @Transactional(readOnly = true)
+    public PromptListResponse listBookmarked(long accountId, int page, int size) {
+
+        if (page < 1) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "page는 1 이상이어야 합니다.");
+        if (size < 1 || size > 50) throw new BusinessException(ErrorCode.VALIDATION_ERROR, "size는 1~50 이어야 합니다.");
+
+        long total = promptBookmarkRepository.countActiveByAccount(accountId);
+        int totalPages = (total == 0) ? 0 : (int) ((total + size - 1) / size);
+        boolean hasNext = page < totalPages;
+
+        int offset = (page - 1) * size;
+
+        List<Long> bookmarkedIds = promptBookmarkRepository.findActiveBookmarkedPromptIds(accountId, size, offset);
+        if (bookmarkedIds.isEmpty()) {
+            PageMeta meta = new PageMeta(page, size, total, totalPages, false);
+            return new PromptListResponse(List.of(), meta);
+        }
+
+        // prompts 조회 (author/tags 포함)
+        List<Prompt> prompts = promptRepository.findByIdInVisibleWithGraph(bookmarkedIds, PromptStatus.DELETED);
+
+        // 좋아요 상태도 같이 내려주고 싶으면(북마크 목록에서 하트도 보여줄 거니까)
+        Set<Long> likedPromptIds = new HashSet<>(promptLikeRepository.findActiveLikedPromptIds(accountId, bookmarkedIds));
+
+        // id 순서(북마크 최신순) 보존
+        Map<Long, Prompt> promptMap = new HashMap<>();
+        for (Prompt p : prompts) {
+            promptMap.put(p.getId(), p);
+        }
+
+        List<PromptResponse> items = new ArrayList<>();
+        for (Long id : bookmarkedIds) {
+            Prompt p = promptMap.get(id);
+            if (p == null) continue; // 삭제되었거나 숨김 등으로 빠질 수 있음
+            boolean isLiked = likedPromptIds.contains(id);
+            items.add(PromptResponse.from(p, isLiked));
+        }
+
+        PageMeta meta = new PageMeta(page, size, total, totalPages, hasNext);
+        return new PromptListResponse(items, meta);
     }
 
     /* ===============================

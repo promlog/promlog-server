@@ -4,6 +4,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
+import java.util.List;
+
 public interface PromptBookmarkRepository extends JpaRepository<PromptBookmarkIdOnly, Long> {
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
@@ -16,7 +18,6 @@ public interface PromptBookmarkRepository extends JpaRepository<PromptBookmarkId
         """, nativeQuery = true)
     void bookmark(Long promptId, Long accountId);
 
-    // ✅ 북마크 취소(soft delete) - 트리거가 bookmark_count 감소 처리
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
         UPDATE prompt_bookmarks
@@ -28,7 +29,7 @@ public interface PromptBookmarkRepository extends JpaRepository<PromptBookmarkId
         """, nativeQuery = true)
     int unbookmark(Long promptId, Long accountId);
 
-    // ✅ 중요: EXISTS는 0/1(숫자)로 떨어질 수 있으니 int로 받는다 (ClassCastException 방지)
+    // ✅ EXISTS는 0/1로 내려올 수 있으니 int로 받는다 (ClassCastException 방지)
     @Query(value = """
         SELECT EXISTS(
           SELECT 1
@@ -40,10 +41,29 @@ public interface PromptBookmarkRepository extends JpaRepository<PromptBookmarkId
         """, nativeQuery = true)
     int existsActiveRaw(Long promptId, Long accountId);
 
-    // ✅ 서비스/호출부에서 boolean이 필요하면 이 default 메서드를 쓰면 됨
     default boolean existsActive(Long promptId, Long accountId) {
-        return existsActiveRaw(promptId, accountId) == 1;
+        return existsActiveRaw(promptId, Long.valueOf(accountId)) == 1;
     }
+
+    // ✅ 내 북마크 목록: prompt_id만 페이징으로 뽑기 (최신순)
+    @Query(value = """
+        SELECT pb.prompt_id
+        FROM prompt_bookmarks pb
+        WHERE pb.account_id = :accountId
+          AND pb.deleted_at IS NULL
+        ORDER BY pb.created_at DESC
+        LIMIT :limit OFFSET :offset
+        """, nativeQuery = true)
+    List<Long> findActiveBookmarkedPromptIds(Long accountId, int limit, int offset);
+
+    // ✅ 내 북마크 총 개수
+    @Query(value = """
+        SELECT COUNT(*)
+        FROM prompt_bookmarks pb
+        WHERE pb.account_id = :accountId
+          AND pb.deleted_at IS NULL
+        """, nativeQuery = true)
+    long countActiveByAccount(Long accountId);
 }
 
 /**
@@ -70,6 +90,7 @@ class PromptBookmarkKey implements java.io.Serializable {
     private Long accountId;
 
     public PromptBookmarkKey() {}
+
     public PromptBookmarkKey(Long promptId, Long accountId) {
         this.promptId = promptId;
         this.accountId = accountId;
