@@ -97,7 +97,6 @@ public class PromptController {
        likes
        =============================== */
 
-    // ✅ 좋아요
     @PostMapping("/{promptId}/likes")
     public ApiResponse<LikeResponse> like(
             Authentication authentication,
@@ -107,7 +106,6 @@ public class PromptController {
         return ApiResponse.ok(promptService.like(accountId, promptId));
     }
 
-    // ✅ 좋아요 취소
     @DeleteMapping("/{promptId}/likes")
     public ApiResponse<LikeResponse> unlike(
             Authentication authentication,
@@ -139,5 +137,15 @@ public class PromptController {
     ) {
         long accountId = (long) authentication.getPrincipal();
         return ApiResponse.ok(promptService.bookmark(accountId, promptId));
+    }
+
+    // ✅ 북마크 삭제(취소)
+    @DeleteMapping("/{promptId}/bookmarks")
+    public ApiResponse<BookmarkResponse> unbookmark(
+            Authentication authentication,
+            @PathVariable Long promptId
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.unbookmark(accountId, promptId));
     }
 }

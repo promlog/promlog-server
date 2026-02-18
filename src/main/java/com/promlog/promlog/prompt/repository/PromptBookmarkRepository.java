@@ -16,6 +16,19 @@ public interface PromptBookmarkRepository extends JpaRepository<PromptBookmarkId
         """, nativeQuery = true)
     void bookmark(Long promptId, Long accountId);
 
+    // ✅ 북마크 취소(soft delete) - 트리거가 bookmark_count 감소 처리
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+        UPDATE prompt_bookmarks
+           SET deleted_at = NOW(3),
+               updated_at = NOW(3)
+         WHERE prompt_id = :promptId
+           AND account_id = :accountId
+           AND deleted_at IS NULL
+        """, nativeQuery = true)
+    int unbookmark(Long promptId, Long accountId);
+
+    // ✅ 중요: EXISTS는 0/1(숫자)로 떨어질 수 있으니 int로 받는다 (ClassCastException 방지)
     @Query(value = """
         SELECT EXISTS(
           SELECT 1
@@ -25,7 +38,12 @@ public interface PromptBookmarkRepository extends JpaRepository<PromptBookmarkId
             AND deleted_at IS NULL
         )
         """, nativeQuery = true)
-    boolean existsActive(Long promptId, Long accountId);
+    int existsActiveRaw(Long promptId, Long accountId);
+
+    // ✅ 서비스/호출부에서 boolean이 필요하면 이 default 메서드를 쓰면 됨
+    default boolean existsActive(Long promptId, Long accountId) {
+        return existsActiveRaw(promptId, accountId) == 1;
+    }
 }
 
 /**

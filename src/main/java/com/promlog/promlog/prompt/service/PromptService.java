@@ -71,7 +71,7 @@ public class PromptService {
                 req.isAnonymous()
         );
 
-        Prompt saved = promptRepository.save(prompt); // id 생성
+        Prompt saved = promptRepository.save(prompt);
 
         List<Long> categoryIds = safeIds(req.categoryIds());
         List<Long> platformIds = safeIds(req.platformIds());
@@ -300,7 +300,6 @@ public class PromptService {
         promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        // ✅ 트리거가 like_count를 관리하므로, 서비스에서 카운트 증감하지 않음
         promptLikeRepository.like(promptId, accountId);
 
         int likeCount = promptRepository.findLikeCountOrZero(promptId);
@@ -312,7 +311,6 @@ public class PromptService {
         promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        // ✅ 트리거가 like_count를 관리하므로, 서비스에서 카운트 증감하지 않음
         promptLikeRepository.unlike(promptId, accountId);
 
         int likeCount = promptRepository.findLikeCountOrZero(promptId);
@@ -358,11 +356,29 @@ public class PromptService {
         promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        // ✅ 트리거가 bookmark_count를 관리하므로, 서비스에서 카운트 증감하지 않음
+        // ✅ (prompt_id, account_id) PK 기반 upsert + deleted_at 복구
         promptBookmarkRepository.bookmark(promptId, accountId);
 
         int bookmarkCount = promptRepository.findBookmarkCountOrZero(promptId);
         return new BookmarkResponse(true, bookmarkCount);
+    }
+
+    @Transactional
+    public BookmarkResponse unbookmark(long accountId, Long promptId) {
+        promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        // ✅ 이미 북마크 안 한 상태면 그냥 false 반환(멱등)
+        if (!promptBookmarkRepository.existsActive(promptId, accountId)) {
+            int bookmarkCount = promptRepository.findBookmarkCountOrZero(promptId);
+            return new BookmarkResponse(false, bookmarkCount);
+        }
+
+        // ✅ soft delete (트리거가 bookmark_count -1 처리)
+        promptBookmarkRepository.unbookmark(promptId, accountId);
+
+        int bookmarkCount = promptRepository.findBookmarkCountOrZero(promptId);
+        return new BookmarkResponse(false, bookmarkCount);
     }
 
     /* ===============================
