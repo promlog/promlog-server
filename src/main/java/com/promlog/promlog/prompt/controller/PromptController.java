@@ -8,6 +8,7 @@ import com.promlog.promlog.prompt.dto.PromptListResponse;
 import com.promlog.promlog.prompt.dto.PromptResponse;
 import com.promlog.promlog.prompt.dto.PromptUpdateRequest;
 import com.promlog.promlog.prompt.dto.ReviewCreateRequest;
+import com.promlog.promlog.prompt.dto.ReviewListResponse;
 import com.promlog.promlog.prompt.dto.ReviewResponse;
 import com.promlog.promlog.prompt.service.PromptService;
 import jakarta.validation.Valid;
@@ -15,6 +16,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @RestController
@@ -173,5 +175,16 @@ public class PromptController {
     ) {
         long accountId = (long) authentication.getPrincipal();
         return ApiResponse.ok(promptService.createReview(accountId, promptId, req));
+    }
+
+    // ✅ 리뷰 목록 조회 (무한스크롤)
+    @GetMapping("/{promptId}/reviews")
+    public ApiResponse<ReviewListResponse> listReviews(
+            @PathVariable Long promptId,
+            @RequestParam(required = false, defaultValue = "20") int size,
+            @RequestParam(required = false) LocalDateTime cursorCreatedAt,
+            @RequestParam(required = false) Long cursorId
+    ) {
+        return ApiResponse.ok(promptService.listReviews(promptId, size, cursorCreatedAt, cursorId));
     }
 }

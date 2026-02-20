@@ -16,6 +16,7 @@ import com.promlog.promlog.prompt.dto.PromptListResponse;
 import com.promlog.promlog.prompt.dto.PromptResponse;
 import com.promlog.promlog.prompt.dto.PromptUpdateRequest;
 import com.promlog.promlog.prompt.dto.ReviewCreateRequest;
+import com.promlog.promlog.prompt.dto.ReviewListResponse;
 import com.promlog.promlog.prompt.dto.ReviewResponse;
 import com.promlog.promlog.prompt.platform.repository.PlatformRepository;
 import com.promlog.promlog.prompt.repository.PromptBookmarkRepository;
@@ -23,8 +24,10 @@ import com.promlog.promlog.prompt.repository.PromptLikeRepository;
 import com.promlog.promlog.prompt.repository.PromptRepository;
 import com.promlog.promlog.prompt.repository.PromptReviewRepository;
 import com.promlog.promlog.prompt.repository.PromptSpecifications;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,6 +64,10 @@ public class PromptService {
         this.categoryRepository = categoryRepository;
         this.platformRepository = platformRepository;
     }
+
+    /* ===============================
+       prompts
+       =============================== */
 
     @Transactional
     public PromptResponse create(long accountId, PromptCreateRequest req) {
@@ -441,20 +448,80 @@ public class PromptService {
     @Transactional
     public ReviewResponse createReview(long accountId, Long promptId, ReviewCreateRequest req) {
 
-        // ✅ 프롬프트 존재/삭제 여부 체크
         promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        if (promptReviewRepository.existsActiveByPromptIdAndAccountId(promptId, accountId)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "이미 이 프롬프트에 리뷰를 작성했습니다.");
+        }
 
         String content = (req.content() == null) ? "" : req.content().trim();
         if (content.isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "리뷰 내용은 비어있을 수 없습니다.");
         }
 
-        PromptReview saved = promptReviewRepository.save(
-                new PromptReview(promptId, accountId, content)
-        );
+        try {
+            PromptReview saved = promptReviewRepository.save(
+                    new PromptReview(promptId, accountId, content)
+            );
+            return ReviewResponse.from(saved);
+        } catch (DataIntegrityViolationException e) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "이미 이 프롬프트에 리뷰를 작성했습니다.");
+        }
+    }
 
-        return ReviewResponse.from(saved);
+    /**
+     * ✅ 리뷰 목록 조회 (커서 기반 무한스크롤)
+     * - 최신순(createdAt DESC, id DESC)
+     * - cursorCreatedAt/cursorId가 있으면 그 다음 페이지
+     */
+    @Transactional(readOnly = true)
+    public ReviewListResponse listReviews(Long promptId, int size, LocalDateTime cursorCreatedAt, Long cursorId) {
+
+        if (size < 1 || size > 50) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "size는 1~50 이어야 합니다.");
+        }
+
+        // 프롬프트 존재 체크 (삭제/숨김 정책에 맞게)
+        promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        Pageable pageable = PageRequest.of(0, size + 1); // hasNext 확인하려고 +1
+
+        List<PromptReview> rows;
+        if (cursorCreatedAt == null || cursorId == null) {
+            rows = promptReviewRepository.findFirstPage(promptId, pageable);
+        } else {
+            rows = promptReviewRepository.findNextPage(promptId, cursorCreatedAt, cursorId, pageable);
+        }
+
+        boolean hasNext = rows.size() > size;
+        if (hasNext) {
+            rows = rows.subList(0, size);
+        }
+
+        List<ReviewResponse> items = rows.stream()
+                .map(ReviewResponse::from)
+                .toList();
+
+        String nextCursorCreatedAtStr = null;
+        Long nextCursorId = null;
+
+        if (hasNext && !rows.isEmpty()) {
+            PromptReview last = rows.get(rows.size() - 1);
+            nextCursorCreatedAtStr = last.getCreatedAt().toString();
+            nextCursorId = last.getId();
+        }
+
+        return new ReviewListResponse(
+                items,
+                new ReviewListResponse.CursorMeta(
+                        size,
+                        hasNext,
+                        nextCursorCreatedAtStr,
+                        nextCursorId
+                )
+        );
     }
 
     /* ===============================

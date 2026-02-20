@@ -9,8 +9,7 @@ public record ReviewResponse(
         Long promptId,
         Long accountId,
         String content,
-        LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime createdAt
 ) {
     public static ReviewResponse from(PromptReview r) {
         return new ReviewResponse(
@@ -18,8 +17,7 @@ public record ReviewResponse(
                 r.getPromptId(),
                 r.getAccountId(),
                 r.getContent(),
-                r.getCreatedAt(),
-                r.getUpdatedAt()
+                r.getCreatedAt()
         );
     }
 }
