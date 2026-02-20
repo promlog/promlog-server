@@ -36,9 +36,11 @@ public record PromptResponse(
     // 📊 통계 정보 그룹
     public record Stats(
             int likeCount,
+            int bookmarkCount,
             long viewCount,
             long copyCount,
-            boolean isLiked // ✅ 추가
+            boolean isLiked,
+            boolean isBookmarked
     ) {}
 
     // 🏷 카테고리/플랫폼 그룹
@@ -47,13 +49,18 @@ public record PromptResponse(
             List<TagDto> platforms
     ) {}
 
-    // ✅ 기존 호출부 호환용 (기본값: false)
+    // ✅ 기존 호출부 호환용 (기본값: false, false)
     public static PromptResponse from(Prompt p) {
-        return from(p, false);
+        return from(p, false, false);
     }
 
-    // ✅ 신규: 로그인 사용자의 좋아요 여부까지 포함
+    // ✅ 기존 호출부 호환용 (isBookmarked 기본 false)
     public static PromptResponse from(Prompt p, boolean isLiked) {
+        return from(p, isLiked, false);
+    }
+
+    // ✅ 신규: 좋아요 + 북마크 여부 모두 포함
+    public static PromptResponse from(Prompt p, boolean isLiked, boolean isBookmarked) {
         boolean anonymous = p.isAnonymous();
         String nickname = anonymous ? null : p.getAuthor().getNickname();
 
@@ -91,9 +98,11 @@ public record PromptResponse(
                 ),
                 new Stats(
                         p.getLikeCount(),
+                        p.getBookmarkCount(),
                         p.getViewCount(),
                         p.getCopyCount(),
-                        isLiked
+                        isLiked,
+                        isBookmarked
                 ),
                 new Tags(categories, platforms)
         );

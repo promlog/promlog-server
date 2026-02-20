@@ -96,7 +96,7 @@ public class PromptService {
                 .findDetailWithAuthorAndTags(saved.getId(), PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        return PromptResponse.from(refreshed, false);
+        return PromptResponse.from(refreshed, false, false);
     }
 
     @Transactional(readOnly = true)
@@ -136,14 +136,25 @@ public class PromptService {
                 .filter(Objects::nonNull)
                 .toList();
 
+        // ✅ isLiked
         final Set<Long> likedPromptIds =
                 (viewerAccountId == null || promptIds.isEmpty())
                         ? Collections.emptySet()
                         : new HashSet<>(promptLikeRepository.findActiveLikedPromptIds(viewerAccountId, promptIds));
 
+        // ✅ isBookmarked
+        final Set<Long> bookmarkedPromptIds =
+                (viewerAccountId == null || promptIds.isEmpty())
+                        ? Collections.emptySet()
+                        : new HashSet<>(promptBookmarkRepository.findActiveBookmarkedPromptIdsIn(viewerAccountId, promptIds));
+
         List<PromptResponse> items = result.getContent()
                 .stream()
-                .map(p -> PromptResponse.from(p, likedPromptIds.contains(p.getId())))
+                .map(p -> PromptResponse.from(
+                        p,
+                        likedPromptIds.contains(p.getId()),
+                        bookmarkedPromptIds.contains(p.getId())
+                ))
                 .toList();
 
         PageMeta meta = new PageMeta(
@@ -170,11 +181,14 @@ public class PromptService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
         boolean isLiked = false;
+        boolean isBookmarked = false;
+
         if (viewerAccountId != null) {
             isLiked = promptLikeRepository.existsActive(promptId, viewerAccountId);
+            isBookmarked = promptBookmarkRepository.existsActive(promptId, viewerAccountId);
         }
 
-        return PromptResponse.from(prompt, isLiked);
+        return PromptResponse.from(prompt, isLiked, isBookmarked);
     }
 
     @Transactional
@@ -223,7 +237,7 @@ public class PromptService {
                 .findDetailWithAuthorAndTags(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        return PromptResponse.from(refreshed, false);
+        return PromptResponse.from(refreshed, false, false);
     }
 
     @Transactional
@@ -277,7 +291,7 @@ public class PromptService {
 
         var items = result.getContent()
                 .stream()
-                .map(p -> PromptResponse.from(p, false))
+                .map(p -> PromptResponse.from(p, false, false))
                 .toList();
 
         PageMeta meta = new PageMeta(
@@ -333,7 +347,7 @@ public class PromptService {
 
         var items = result.getContent()
                 .stream()
-                .map(p -> PromptResponse.from(p, true))
+                .map(p -> PromptResponse.from(p, true, false))
                 .toList();
 
         PageMeta meta = new PageMeta(
@@ -367,7 +381,6 @@ public class PromptService {
         promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
 
-        // 멱등 처리
         if (!promptBookmarkRepository.existsActive(promptId, accountId)) {
             int bookmarkCount = promptRepository.findBookmarkCountOrZero(promptId);
             return new BookmarkResponse(false, bookmarkCount);
@@ -397,24 +410,19 @@ public class PromptService {
             return new PromptListResponse(List.of(), meta);
         }
 
-        // prompts 조회 (author/tags 포함)
         List<Prompt> prompts = promptRepository.findByIdInVisibleWithGraph(bookmarkedIds, PromptStatus.DELETED);
 
-        // 좋아요 상태도 같이 내려주고 싶으면(북마크 목록에서 하트도 보여줄 거니까)
         Set<Long> likedPromptIds = new HashSet<>(promptLikeRepository.findActiveLikedPromptIds(accountId, bookmarkedIds));
 
-        // id 순서(북마크 최신순) 보존
         Map<Long, Prompt> promptMap = new HashMap<>();
-        for (Prompt p : prompts) {
-            promptMap.put(p.getId(), p);
-        }
+        for (Prompt p : prompts) promptMap.put(p.getId(), p);
 
         List<PromptResponse> items = new ArrayList<>();
         for (Long id : bookmarkedIds) {
             Prompt p = promptMap.get(id);
-            if (p == null) continue; // 삭제되었거나 숨김 등으로 빠질 수 있음
+            if (p == null) continue;
             boolean isLiked = likedPromptIds.contains(id);
-            items.add(PromptResponse.from(p, isLiked));
+            items.add(PromptResponse.from(p, isLiked, true)); // ✅ 북마크 목록이니까 true
         }
 
         PageMeta meta = new PageMeta(page, size, total, totalPages, hasNext);
