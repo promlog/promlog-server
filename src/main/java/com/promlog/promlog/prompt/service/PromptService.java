@@ -7,6 +7,7 @@ import com.promlog.promlog.global.error.ErrorCode;
 import com.promlog.promlog.global.response.PageMeta;
 import com.promlog.promlog.prompt.category.repository.CategoryRepository;
 import com.promlog.promlog.prompt.domain.Prompt;
+import com.promlog.promlog.prompt.domain.PromptReview;
 import com.promlog.promlog.prompt.domain.PromptStatus;
 import com.promlog.promlog.prompt.dto.BookmarkResponse;
 import com.promlog.promlog.prompt.dto.LikeResponse;
@@ -14,10 +15,13 @@ import com.promlog.promlog.prompt.dto.PromptCreateRequest;
 import com.promlog.promlog.prompt.dto.PromptListResponse;
 import com.promlog.promlog.prompt.dto.PromptResponse;
 import com.promlog.promlog.prompt.dto.PromptUpdateRequest;
+import com.promlog.promlog.prompt.dto.ReviewCreateRequest;
+import com.promlog.promlog.prompt.dto.ReviewResponse;
 import com.promlog.promlog.prompt.platform.repository.PlatformRepository;
 import com.promlog.promlog.prompt.repository.PromptBookmarkRepository;
 import com.promlog.promlog.prompt.repository.PromptLikeRepository;
 import com.promlog.promlog.prompt.repository.PromptRepository;
+import com.promlog.promlog.prompt.repository.PromptReviewRepository;
 import com.promlog.promlog.prompt.repository.PromptSpecifications;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -34,6 +38,7 @@ public class PromptService {
     private final PromptRepository promptRepository;
     private final PromptLikeRepository promptLikeRepository;
     private final PromptBookmarkRepository promptBookmarkRepository;
+    private final PromptReviewRepository promptReviewRepository;
 
     private final AccountRepository accountRepository;
     private final CategoryRepository categoryRepository;
@@ -43,6 +48,7 @@ public class PromptService {
             PromptRepository promptRepository,
             PromptLikeRepository promptLikeRepository,
             PromptBookmarkRepository promptBookmarkRepository,
+            PromptReviewRepository promptReviewRepository,
             AccountRepository accountRepository,
             CategoryRepository categoryRepository,
             PlatformRepository platformRepository
@@ -50,6 +56,7 @@ public class PromptService {
         this.promptRepository = promptRepository;
         this.promptLikeRepository = promptLikeRepository;
         this.promptBookmarkRepository = promptBookmarkRepository;
+        this.promptReviewRepository = promptReviewRepository;
         this.accountRepository = accountRepository;
         this.categoryRepository = categoryRepository;
         this.platformRepository = platformRepository;
@@ -136,13 +143,11 @@ public class PromptService {
                 .filter(Objects::nonNull)
                 .toList();
 
-        // ✅ isLiked
         final Set<Long> likedPromptIds =
                 (viewerAccountId == null || promptIds.isEmpty())
                         ? Collections.emptySet()
                         : new HashSet<>(promptLikeRepository.findActiveLikedPromptIds(viewerAccountId, promptIds));
 
-        // ✅ isBookmarked
         final Set<Long> bookmarkedPromptIds =
                 (viewerAccountId == null || promptIds.isEmpty())
                         ? Collections.emptySet()
@@ -422,11 +427,34 @@ public class PromptService {
             Prompt p = promptMap.get(id);
             if (p == null) continue;
             boolean isLiked = likedPromptIds.contains(id);
-            items.add(PromptResponse.from(p, isLiked, true)); // ✅ 북마크 목록이니까 true
+            items.add(PromptResponse.from(p, isLiked, true));
         }
 
         PageMeta meta = new PageMeta(page, size, total, totalPages, hasNext);
         return new PromptListResponse(items, meta);
+    }
+
+    /* ===============================
+       reviews
+       =============================== */
+
+    @Transactional
+    public ReviewResponse createReview(long accountId, Long promptId, ReviewCreateRequest req) {
+
+        // ✅ 프롬프트 존재/삭제 여부 체크
+        promptRepository.findByIdAndDeletedAtIsNullAndStatusNot(promptId, PromptStatus.DELETED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "프롬프트를 찾을 수 없습니다."));
+
+        String content = (req.content() == null) ? "" : req.content().trim();
+        if (content.isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "리뷰 내용은 비어있을 수 없습니다.");
+        }
+
+        PromptReview saved = promptReviewRepository.save(
+                new PromptReview(promptId, accountId, content)
+        );
+
+        return ReviewResponse.from(saved);
     }
 
     /* ===============================
