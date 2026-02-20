@@ -42,7 +42,7 @@ public interface PromptBookmarkRepository extends JpaRepository<PromptBookmarkId
     int existsActiveRaw(Long promptId, Long accountId);
 
     default boolean existsActive(Long promptId, Long accountId) {
-        return existsActiveRaw(promptId, Long.valueOf(accountId)) == 1;
+        return existsActiveRaw(promptId, accountId) == 1;
     }
 
     // ✅ 내 북마크 목록: prompt_id만 페이징으로 뽑기 (최신순)
@@ -64,6 +64,16 @@ public interface PromptBookmarkRepository extends JpaRepository<PromptBookmarkId
           AND pb.deleted_at IS NULL
         """, nativeQuery = true)
     long countActiveByAccount(Long accountId);
+
+    // ✅ 목록 조회에서 필요한 "현재 페이지 promptIds 중 내가 북마크한 것"만 뽑기
+    @Query(value = """
+        SELECT pb.prompt_id
+        FROM prompt_bookmarks pb
+        WHERE pb.account_id = :accountId
+          AND pb.deleted_at IS NULL
+          AND pb.prompt_id IN (:promptIds)
+        """, nativeQuery = true)
+    List<Long> findActiveBookmarkedPromptIdsIn(Long accountId, List<Long> promptIds);
 }
 
 /**
