@@ -546,4 +546,25 @@ public class PromptService {
             );
         }
     }
+
+    @Transactional
+    public void deleteReview(long accountId, Long promptId, Long reviewId) {
+
+        // 리뷰 존재 + promptId 매칭 체크
+        PromptReview review = promptReviewRepository.findByIdAndPromptId(reviewId, promptId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "리뷰를 찾을 수 없습니다."));
+
+        // 이미 삭제된 리뷰면 멱등 성공 처리
+        if (review.getDeletedAt() != null) {
+            return;
+        }
+
+        // 작성자만 삭제 가능
+        if (!Objects.equals(review.getAccountId(), accountId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "작성자만 리뷰를 삭제할 수 있습니다.");
+        }
+
+        // soft delete
+        promptReviewRepository.softDeleteById(reviewId, LocalDateTime.now());
+    }
 }

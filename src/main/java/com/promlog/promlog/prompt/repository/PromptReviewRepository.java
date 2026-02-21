@@ -3,11 +3,13 @@ package com.promlog.promlog.prompt.repository;
 import com.promlog.promlog.prompt.domain.PromptReview;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface PromptReviewRepository extends JpaRepository<PromptReview, Long> {
 
@@ -47,4 +49,25 @@ public interface PromptReviewRepository extends JpaRepository<PromptReview, Long
                                     @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
                                     @Param("cursorId") Long cursorId,
                                     Pageable pageable);
+
+    // ✅ 삭제용: promptId까지 같이 검증해서 찾아오기
+    @Query("""
+        select r
+          from PromptReview r
+         where r.id = :reviewId
+           and r.promptId = :promptId
+    """)
+    Optional<PromptReview> findByIdAndPromptId(@Param("reviewId") Long reviewId,
+                                               @Param("promptId") Long promptId);
+
+    // ✅ 멱등 soft delete
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update PromptReview r
+           set r.deletedAt = :now
+         where r.id = :reviewId
+           and r.deletedAt is null
+    """)
+    int softDeleteById(@Param("reviewId") Long reviewId,
+                       @Param("now") LocalDateTime now);
 }

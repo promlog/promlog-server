@@ -187,4 +187,17 @@ public class PromptController {
     ) {
         return ApiResponse.ok(promptService.listReviews(promptId, size, cursorCreatedAt, cursorId));
     }
+
+    // ✅ 리뷰 삭제 (로그인 필수, 작성자만)
+    @DeleteMapping("/{promptId}/reviews/{reviewId}")
+    @ResponseStatus(HttpStatus.OK)
+    public ApiResponse<?> deleteReview(
+            Authentication authentication,
+            @PathVariable Long promptId,
+            @PathVariable Long reviewId
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        promptService.deleteReview(accountId, promptId, reviewId);
+        return ApiResponse.ok(java.util.Map.of("deleted", true));
+    }
 }
