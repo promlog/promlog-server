@@ -70,4 +70,32 @@ public interface PromptReviewRepository extends JpaRepository<PromptReview, Long
     """)
     int softDeleteById(@Param("reviewId") Long reviewId,
                        @Param("now") LocalDateTime now);
+
+    // ✅ 수정용 update (작성자 + 미삭제 조건)
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        update PromptReview r
+           set r.content = :content,
+               r.updatedAt = :now
+         where r.id = :reviewId
+           and r.promptId = :promptId
+           and r.accountId = :accountId
+           and r.deletedAt is null
+    """)
+    int updateContent(@Param("reviewId") Long reviewId,
+                      @Param("promptId") Long promptId,
+                      @Param("accountId") Long accountId,
+                      @Param("content") String content,
+                      @Param("now") LocalDateTime now);
+
+    // ✅ 수정 후 응답 내려주려고 재조회
+    @Query("""
+        select r
+          from PromptReview r
+         where r.id = :reviewId
+           and r.promptId = :promptId
+           and r.deletedAt is null
+    """)
+    Optional<PromptReview> findActiveByIdAndPromptId(@Param("reviewId") Long reviewId,
+                                                     @Param("promptId") Long promptId);
 }

@@ -1,15 +1,7 @@
 package com.promlog.promlog.prompt.controller;
 
 import com.promlog.promlog.global.response.ApiResponse;
-import com.promlog.promlog.prompt.dto.BookmarkResponse;
-import com.promlog.promlog.prompt.dto.LikeResponse;
-import com.promlog.promlog.prompt.dto.PromptCreateRequest;
-import com.promlog.promlog.prompt.dto.PromptListResponse;
-import com.promlog.promlog.prompt.dto.PromptResponse;
-import com.promlog.promlog.prompt.dto.PromptUpdateRequest;
-import com.promlog.promlog.prompt.dto.ReviewCreateRequest;
-import com.promlog.promlog.prompt.dto.ReviewListResponse;
-import com.promlog.promlog.prompt.dto.ReviewResponse;
+import com.promlog.promlog.prompt.dto.*;
 import com.promlog.promlog.prompt.service.PromptService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -199,5 +191,17 @@ public class PromptController {
         long accountId = (long) authentication.getPrincipal();
         promptService.deleteReview(accountId, promptId, reviewId);
         return ApiResponse.ok(java.util.Map.of("deleted", true));
+    }
+
+    // ✅ 리뷰 수정 (로그인 필수, 작성자만)
+    @PatchMapping("/{promptId}/reviews/{reviewId}")
+    public ApiResponse<ReviewResponse> updateReview(
+            Authentication authentication,
+            @PathVariable Long promptId,
+            @PathVariable Long reviewId,
+            @Valid @RequestBody ReviewUpdateRequest req
+    ) {
+        long accountId = (long) authentication.getPrincipal();
+        return ApiResponse.ok(promptService.updateReview(accountId, promptId, reviewId, req));
     }
 }

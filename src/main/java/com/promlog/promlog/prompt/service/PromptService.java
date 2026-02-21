@@ -1,5 +1,6 @@
 package com.promlog.promlog.prompt.service;
 
+import com.promlog.promlog.prompt.dto.ReviewUpdateRequest;
 import com.promlog.promlog.account.domain.Account;
 import com.promlog.promlog.account.repository.AccountRepository;
 import com.promlog.promlog.global.error.BusinessException;
@@ -566,5 +567,33 @@ public class PromptService {
 
         // soft delete
         promptReviewRepository.softDeleteById(reviewId, LocalDateTime.now());
+    }
+
+    @Transactional
+    public ReviewResponse updateReview(long accountId, Long promptId, Long reviewId, ReviewUpdateRequest req) {
+
+        String content = (req.content() == null) ? "" : req.content().trim();
+        if (content.isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "리뷰 내용은 비어있을 수 없습니다.");
+        }
+
+        int updated = promptReviewRepository.updateContent(
+                reviewId,
+                promptId,
+                accountId,
+                content,
+                LocalDateTime.now()
+        );
+
+        // updated=0 이면 (1) 존재X (2) promptId mismatch (3) 작성자 아님 (4) 이미 삭제
+        if (updated == 0) {
+            // 존재 자체를 숨기고 싶으면 NOT_FOUND로 통일하는 게 깔끔함
+            throw new BusinessException(ErrorCode.NOT_FOUND, "리뷰를 찾을 수 없습니다.");
+        }
+
+        PromptReview refreshed = promptReviewRepository.findActiveByIdAndPromptId(reviewId, promptId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "리뷰를 찾을 수 없습니다."));
+
+        return ReviewResponse.from(refreshed);
     }
 }
