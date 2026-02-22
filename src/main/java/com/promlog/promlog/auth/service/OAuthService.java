@@ -13,6 +13,7 @@ import com.promlog.promlog.global.security.jwt.JwtTokenProvider;
 import com.promlog.promlog.oauthidentity.domain.OAuthIdentity;
 import com.promlog.promlog.oauthidentity.domain.OAuthProviderType;
 import com.promlog.promlog.oauthidentity.repository.OAuthIdentityRepository;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,6 +21,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 
+@Slf4j
 @Service
 public class OAuthService {
 
@@ -27,24 +29,39 @@ public class OAuthService {
     private final OAuthIdentityRepository oauthRepo;
     private final AccountRepository accountRepo;
     private final JwtTokenProvider jwt;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper;
 
     public OAuthService(
             KakaoClient kakaoClient,
             OAuthIdentityRepository oauthRepo,
             AccountRepository accountRepo,
-            JwtTokenProvider jwt
+            JwtTokenProvider jwt,
+            ObjectMapper objectMapper
     ) {
         this.kakaoClient = kakaoClient;
         this.oauthRepo = oauthRepo;
         this.accountRepo = accountRepo;
         this.jwt = jwt;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
     public AuthResponse kakaoLogin(String code) {
-        var token = kakaoClient.exchangeToken(code);
-        var me = kakaoClient.getUserInfo(token.accessToken());
+        final KakaoUserInfoResponse me;
+        try {
+            var token = kakaoClient.exchangeToken(code);
+            me = kakaoClient.getUserInfo(token.accessToken());
+        } catch (BusinessException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            Throwable root = rootCause(e);
+            log.warn("[KakaoOAuthFailed] msg={}", String.valueOf(root.getMessage()));
+            throw new BusinessException(
+                    ErrorCode.OAUTH_PROVIDER_ERROR,
+                    "카카오 로그인 처리 중 오류가 발생했습니다.",
+                    Map.of("reason", "KAKAO_API_ERROR")
+            );
+        }
 
         String subject = String.valueOf(me.id());
         OAuthProviderType provider = OAuthProviderType.KAKAO;
@@ -57,7 +74,7 @@ public class OAuthService {
         } else {
             // 신규 가입
             account = new Account(pickNickname(me));
-            accountRepo.saveAndFlush(account);
+            accountRepo.save(account);
 
             try {
                 oauthRepo.saveAndFlush(new OAuthIdentity(
@@ -68,16 +85,16 @@ public class OAuthService {
                         toProfileJson(me)
                 ));
             } catch (RuntimeException e) {
-                // ✅ 트리거(45000) / unique 충돌 / JPA flush 예외 등 전부 여기로 들어올 수 있음
                 throw mapOAuthInsertException(e);
             }
         }
 
-        // ✅ 정지/탈퇴/재가입 제한: 토큰 발급 전에 반드시 차단
+        // 토큰 발급 전 차단
         validateAccountStatus(account);
 
-        // ✅ 통과한 계정만 last_login_at 갱신
+        // 통과한 계정만 last_login_at 갱신
         account.updateLastLoginAt(LocalDateTime.now());
+        accountRepo.save(account);
 
         String access = jwt.createAccessToken(account.getId(), account.getRole().name());
         String refresh = jwt.createRefreshToken(account.getId());
@@ -112,7 +129,6 @@ public class OAuthService {
             LocalDateTime deletedAt = account.getDeletedAt();
             LocalDateTime rejoinAllowedAt = (deletedAt == null) ? null : deletedAt.plusDays(7);
 
-            // 7일 제한 중
             if (rejoinAllowedAt != null && now.isBefore(rejoinAllowedAt)) {
                 throw new BusinessException(
                         ErrorCode.REJOIN_NOT_ALLOWED,
@@ -121,7 +137,6 @@ public class OAuthService {
                 );
             }
 
-            // ✅ 7일이 지났어도 DELETED면 로그인 불가. (재가입 유도)
             Map<String, Object> details = new HashMap<>();
             if (rejoinAllowedAt != null) details.put("rejoinAllowedAt", rejoinAllowedAt);
             if (deletedAt != null) details.put("deletedAt", deletedAt);
@@ -148,21 +163,13 @@ public class OAuthService {
         try {
             return objectMapper.writeValueAsString(me);
         } catch (Exception e) {
+            log.warn("[toProfileJson] failed. msg={}", e.getMessage());
             return null;
         }
     }
 
-    /**
-     * ✅ DB 트리거(45000) / Unique / Constraint / JPA flush 에러 등
-     * DataIntegrityViolationException으로 안 들어오고 JpaSystemException 등으로도 올 수 있어서
-     * RuntimeException으로 받아서 root cause 메시지로 매핑한다.
-     */
     private BusinessException mapOAuthInsertException(RuntimeException e) {
-        Throwable root = e;
-        while (root.getCause() != null) {
-            root = root.getCause();
-        }
-
+        Throwable root = rootCause(e);
         String msg = String.valueOf(root.getMessage());
 
         if (msg.contains("Rejoin is allowed only after 7 days")) {
@@ -181,13 +188,19 @@ public class OAuthService {
             );
         }
 
-        Map<String, Object> details = new HashMap<>();
-        details.put("details", msg);
-
         return new BusinessException(
                 ErrorCode.CONFLICT,
                 "소셜 계정 연결 중 오류가 발생했습니다.",
-                details
+                Map.of("details", msg)
         );
+    }
+
+    private Throwable rootCause(Throwable t) {
+        Throwable cur = t;
+        int guard = 0;
+        while (cur.getCause() != null && cur.getCause() != cur && guard++ < 20) {
+            cur = cur.getCause();
+        }
+        return cur;
     }
 }
