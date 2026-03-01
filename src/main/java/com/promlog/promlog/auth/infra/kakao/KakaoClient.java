@@ -21,14 +21,22 @@ public class KakaoClient {
         this.webClient = WebClient.builder().build();
     }
 
-    public KakaoTokenResponse exchangeToken(String code) {
+    // ✅ 변경: redirectUri를 파라미터로 받도록 수정
+    public KakaoTokenResponse exchangeToken(String code, String redirectUri) {
+
+        if (redirectUri == null || redirectUri.isBlank()) {
+            throw new BusinessException(
+                    ErrorCode.VALIDATION_ERROR,
+                    "redirectUri가 비어있습니다.",
+                    null
+            );
+        }
+
         MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
         form.add("grant_type", "authorization_code");
         form.add("client_id", props.clientId());
-        form.add("redirect_uri", props.redirectUri());
+        form.add("redirect_uri", redirectUri); // ✅ 여기 변경
         form.add("code", code);
-
-        // client_secret은 사용 안 함
 
         try {
             return webClient.post()
@@ -40,7 +48,11 @@ public class KakaoClient {
                     .bodyToMono(KakaoTokenResponse.class)
                     .block();
         } catch (Exception e) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "카카오 토큰 교환에 실패했습니다.", e.getMessage());
+            throw new BusinessException(
+                    ErrorCode.OAUTH_PROVIDER_ERROR,
+                    "카카오 토큰 교환에 실패했습니다.",
+                    e.getMessage()
+            );
         }
     }
 
@@ -54,7 +66,11 @@ public class KakaoClient {
                     .bodyToMono(KakaoUserInfoResponse.class)
                     .block();
         } catch (Exception e) {
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "카카오 유저 정보 조회에 실패했습니다.", e.getMessage());
+            throw new BusinessException(
+                    ErrorCode.OAUTH_PROVIDER_ERROR,
+                    "카카오 유저 정보 조회에 실패했습니다.",
+                    e.getMessage()
+            );
         }
     }
 }

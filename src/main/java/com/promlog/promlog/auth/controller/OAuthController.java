@@ -39,37 +39,45 @@ public class OAuthController {
 
     // ✅ 프론트가 code 받는 경우: 이 콜백은 이제 "프론트"로 감
     // 그래서 이 엔드포인트는 거의 안 쓰게 됨(남겨도 되는데 실제로는 호출 안 됨)
-    @GetMapping("/kakao/callback")
-    public ApiResponse<?> kakaoCallback(
-            @RequestParam(required = false) String code,
-            @RequestParam(required = false) String error,
-            @RequestParam(required = false, name = "error_description") String errorDescription
-    ) {
-        if (code == null || code.isBlank()) {
-            throw new BusinessException(
-                    ErrorCode.VALIDATION_ERROR,
-                    "카카오 인증 실패 또는 취소",
-                    java.util.Map.of(
-                            "error", error,
-                            "errorDescription", errorDescription
-                    )
-            );
-        }
-        return ApiResponse.ok(oauthService.kakaoLogin(code));
-    }
+//    @GetMapping("/kakao/callback")
+//    public ApiResponse<?> kakaoCallback(
+//            @RequestParam(required = false) String code,
+//            @RequestParam(required = false) String error,
+//            @RequestParam(required = false, name = "error_description") String errorDescription
+//    ) {
+//        if (code == null || code.isBlank()) {
+//            throw new BusinessException(
+//                    ErrorCode.VALIDATION_ERROR,
+//                    "카카오 인증 실패 또는 취소",
+//                    java.util.Map.of(
+//                            "error", error,
+//                            "errorDescription", errorDescription
+//                    )
+//            );
+//        }
+//        return ApiResponse.ok(oauthService.kakaoLogin(code));
+//    }
 
-    // ✅ NEW: 프론트가 받은 code로 로그인 처리하는 API
+    // ✅ 프론트가 받은 code + redirectUri로 로그인 처리하는 API
     @PostMapping("/kakao/code")
-    public ApiResponse<?> kakaoCodeLogin(@RequestBody KakaoCodeRequest request, HttpServletResponse response) {
-        if (request.code() == null || request.code().isBlank()) {
+    public ApiResponse<?> kakaoCodeLogin(
+            @RequestBody KakaoCodeRequest request,
+            HttpServletResponse response
+    ) {
+        if (request == null || request.code() == null || request.code().isBlank()) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "code가 비어있습니다.", null);
         }
-        AuthResponse auth = oauthService.kakaoLogin(request.code());
+        if (request.redirectUri() == null || request.redirectUri().isBlank()) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "redirectUri가 비어있습니다.", null);
+        }
+
+        // ✅ code + redirectUri 같이 넘김
+        AuthResponse auth = oauthService.kakaoLogin(request.code(), request.redirectUri());
 
         // ✅ refresh token → HttpOnly 쿠키
         ResponseCookie refreshCookie = ResponseCookie.from("refresh_token", auth.refreshToken())
                 .httpOnly(true)
-                .secure(false)          // 로컬 http면 false
+                .secure(false) // 로컬 http면 false
                 .path("/api/auth")
                 .sameSite("Lax")
                 .maxAge(60L * 60 * 24 * 14)
@@ -77,7 +85,7 @@ public class OAuthController {
 
         response.addHeader("Set-Cookie", refreshCookie.toString());
 
-        // ✅ 응답 바디에는 accessToken + account만 내려줌
+        // ✅ 응답 바디에는 accessToken + account만
         return ApiResponse.ok(
                 new KakaoLoginResponse(
                         auth.accessToken(),
@@ -86,7 +94,10 @@ public class OAuthController {
         );
     }
 
-    public record KakaoCodeRequest(String code) {}
+    public record KakaoCodeRequest(
+            String code,
+            String redirectUri
+    ) {}
 
     public record KakaoLoginResponse(
             String accessToken,

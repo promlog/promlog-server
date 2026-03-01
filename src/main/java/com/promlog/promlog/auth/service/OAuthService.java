@@ -46,10 +46,18 @@ public class OAuthService {
     }
 
     @Transactional
-    public AuthResponse kakaoLogin(String code) {
+    public AuthResponse kakaoLogin(String code, String redirectUri) { // ✅ 변경: redirectUri 추가
+        if (redirectUri == null || redirectUri.isBlank()) {
+            throw new BusinessException(
+                    ErrorCode.VALIDATION_ERROR,
+                    "redirectUri가 비어있습니다.",
+                    Map.of("reason", "REDIRECT_URI_EMPTY")
+            );
+        }
+
         final KakaoUserInfoResponse me;
         try {
-            var token = kakaoClient.exchangeToken(code);
+            var token = kakaoClient.exchangeToken(code, redirectUri); // ✅ 변경: redirectUri 전달
             me = kakaoClient.getUserInfo(token.accessToken());
         } catch (BusinessException e) {
             throw e;
@@ -59,7 +67,10 @@ public class OAuthService {
             throw new BusinessException(
                     ErrorCode.OAUTH_PROVIDER_ERROR,
                     "카카오 로그인 처리 중 오류가 발생했습니다.",
-                    Map.of("reason", "KAKAO_API_ERROR")
+                    Map.of(
+                            "reason", "KAKAO_API_ERROR",
+                            "redirectUri", redirectUri
+                    )
             );
         }
 
